@@ -1,0 +1,66 @@
+{
+  "notifications": [
+    {
+      "title": "¡Bienvenido a Barba Larga!",
+      "description": "Tu estilo, nuestra pasión. Agenda tu cita y vive la experiencia."
+    },
+    {
+      "title": "Servicio Premium",
+      "description": "Prueba La Experiencia Alfa. El ritual definitivo para el hombre que lo quiere todo."
+    },
+    {
+      "title": "Asesor de Estilo IA",
+      "description": "¿No sabes qué hacerte? Deja que nuestra IA te recomiende el look perfecto."
+    }
+  ],
+  "services": [
+    {
+      "src": "/multimedia/corte-autoridad.jpg",
+      "alt": "Corte de Autoridad",
+      "hint": "male classic haircut",
+      "type": "image"
+    },
+    {
+      "src": "/multimedia/servicio-premium.jpg",
+      "alt": "Servicio Premium",
+      "hint": "barber tools",
+      "type": "image"
+    },
+    {
+      "src": "/multimedia/experiencia-dominante.jpg",
+      "alt": "Experiencia Dominante: Corte y Barba",
+      "hint": "beard trim",
+      "type": "image"
+    },
+    {
+      "src": "/multimedia/barba.jpg",
+      "alt": "Barba: Detalle de Poder",
+      "hint": "beard detailing",
+      "type": "image"
+    },
+    {
+      "src": "/multimedia/corte-diseño-cejas.jpg",
+      "alt": "Corte + Diseño y Cejas",
+      "hint": "hair design",
+      "type": "image"
+    },
+    {
+      "src": "/multimedia/keratina-mujer.mp4",
+      "alt": "Keratina de Impacto (Mujer)",
+      "hint": "hair treatment",
+      "type": "video"
+    },
+    {
+      "src": "/multimedia/coloracion-hombre.mp4",
+      "alt": "Coloración Estratégica (Hombre)",
+      "hint": "hair coloring",
+      "type": "video"
+    },
+    {
+      "src": "/multimedia/rostro-impecable.jpg",
+      "alt": "Rostro Impecable: Corte y Mascarilla",
+      "hint": "facial treatment",
+      "type": "image"
+    }
+  ]
+}

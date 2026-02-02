@@ -1,0 +1,21 @@
+{
+  "name": "Barba Larga Admin",
+  "short_name": "Admin",
+  "description": "Panel de administración para la barbería Barba Larga.",
+  "start_url": "/admin",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#20120b",
+  "icons": [
+    {
+      "src": "/multimedia/logo-barber.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "/multimedia/logo-barber.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}

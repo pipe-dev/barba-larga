@@ -1,0 +1,1877 @@
+
+
+"use server";
+
+import 'dotenv/config';
+import { z } from "zod";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, doc, getDoc, updateDoc, deleteDoc, query, where, getDocs, orderBy, limit, Timestamp, runTransaction, setDoc, writeBatch } from "firebase/firestore";
+import { format, parse, parseISO, compareAsc, addHours, subDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isToday as isTodayDateFns, isWithinInterval, differenceInDays, subMonths, getDay, addDays, lastDayOfMonth } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
+import { services as allServices } from '@/lib/data';
+// import { team as staticTeam } from '@/lib/team';
+import { es } from 'date-fns/locale';
+import nodemailer from 'nodemailer';
+import path from 'path';
+import { headers } from 'next/headers';
+
+const bookingSchema = z.object({
+  id: z.string().optional(), // For updates
+  barberId: z.string().min(1, { message: "Por favor, selecciona un barbero." }),
+  name: z.string()
+    .min(2, { message: "El nombre debe tener al menos 2 caracteres." })
+    .regex(/^[a-zA-Z\u00C0-\u017F\s'-]+$/, { message: "El nombre solo puede contener letras, espacios y guiones." }),
+  email: z.string().email({ message: "Por favor, introduce un correo electrónico válido." }).optional().or(z.literal("")),
+  phone: z.string().optional(),
+  service: z.string().min(1, { message: "Por favor, selecciona al menos un servicio." }),
+  date: z.string({ required_error: "Por favor, selecciona una fecha." }),
+  time: z.string({ required_error: "Por favor, selecciona una hora." }),
+});
+
+const blockTimeSchema = z.object({
+    barberId: z.string().min(1, { message: "Por favor, selecciona un barbero." }),
+    date: z.string({ required_error: "Por favor, selecciona una fecha." }),
+    time: z.string({ required_error: "Por favor, selecciona una hora de inicio." }),
+    endTime: z.string({ required_error: "Por favor, selecciona una hora de fin." }),
+    name: z.string().min(3, { message: "La descripción es muy corta." }),
+    recurrence: z.enum(["none", "weekly", "daily"]).default("none"),
+});
+
+
+// Updated schema to be more flexible
+const transactionSchema = z.object({
+  type: z.enum(["sale", "expense"], { required_error: "Selecciona el tipo de transacción." }),
+  paymentMethod: z.enum(["cash", "card", "transfer"], { required_error: "Selecciona un método de pago." }),
+  // Manual entries will have these
+  amount: z.coerce.number().positive({ message: "El monto debe ser un número positivo." }).optional(),
+  description: z.string().min(3, { message: "La descripción debe tener al menos 3 caracteres." }).optional(),
+  // Product sales will have this
+  productId: z.string().optional(),
+});
+
+
+const productSchema = z.object({
+  id: z.string().optional(), // For updates
+  name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
+  description: z.string().optional(),
+  sellingPrice: z.coerce.number().positive({ message: "El precio de venta debe ser positivo." }),
+  stock: z.coerce.number().int().min(0, { message: "El stock no puede ser negativo." }),
+});
+
+const customerSchema = z.object({
+  name: z.string().min(2, { message: "El nombre debe tener al menos 2 caracteres." }),
+  email: z.string().email({ message: "Por favor, introduce un correo electrónico válido." }),
+  phone: z.string().optional(),
+});
+
+const notificationSchema = z.object({
+    id: z.string().optional(),
+    title: z.string().min(5, { message: "El título debe tener al menos 5 caracteres." }),
+    description: z.string().min(10, { message: "La descripción debe tener al menos 10 caracteres." }),
+});
+
+
+// Helper to convert 12-hour time to 24-hour format
+const timeTo24Hour = (time12h: string) => {
+    const [time, modifier] = time12h.split(' ');
+    let [hours, minutes] = time.split(':');
+
+    if (hours === '12') {
+        hours = '00';
+    }
+
+    if (modifier && modifier.toUpperCase() === 'PM') {
+        hours = (parseInt(hours, 10) + 12).toString();
+    }
+
+    return `${hours.padStart(2, '0')}:${minutes}`;
+};
+
+// Static fallback for barber emails to ensure reliability
+const staticBarberEmails: { [key: string]: string } = {
+    "alan-martinez": "stuntpk123@gmail.com",
+    "stiven-dorado": "qauay4@gmail.com",
+};
+
+
+export async function blockTimeSlot(prevState: any, formData: FormData) {
+    const data = {
+        name: formData.get("name"),
+        date: formData.get("date"),
+        time: formData.get("time"),
+        endTime: formData.get("endTime"),
+        barberId: formData.get("barberId"),
+        recurrence: formData.get("recurrence"),
+    };
+
+    const validatedFields = blockTimeSchema.safeParse(data);
+
+    if (!validatedFields.success) {
+        return {
+            success: false,
+            message: "Por favor, corrige los errores en el formulario.",
+            errors: validatedFields.error.flatten().fieldErrors,
+        };
+    }
+
+    const { name, date, time, endTime, barberId, recurrence } = validatedFields.data;
+    
+    const team = await getTeam();
+    const barber = team.find(b => b.id === barberId);
+    if (!barber) {
+      return { success: false, message: "El barbero seleccionado no es válido." };
+    }
+
+    try {
+        const batch = writeBatch(db);
+        const startDate = parseISO(date);
+        
+        const getBlockedSlotPayload = (currentDate: Date) => ({
+            name,
+            date: format(currentDate, "yyyy-MM-dd"),
+            time,
+            endTime,
+            barberId,
+            type: 'blocked',
+            service: '',
+            status: 'pending', // Blocked slots don't need a complex status
+            createdAt: new Date(),
+        });
+
+        if (recurrence === 'none') {
+            const newDocRef = doc(collection(db, "appointments"));
+            batch.set(newDocRef, getBlockedSlotPayload(startDate));
+        } else {
+            const monthEnd = endOfMonth(startDate);
+            let currentDate = startDate;
+            
+            if (recurrence === 'daily') {
+                while (currentDate <= monthEnd) {
+                    const newDocRef = doc(collection(db, "appointments"));
+                    batch.set(newDocRef, getBlockedSlotPayload(currentDate));
+                    currentDate = addDays(currentDate, 1);
+                }
+            } else if (recurrence === 'weekly') {
+                const targetDayOfWeek = getDay(startDate);
+                while (currentDate <= monthEnd) {
+                     if (getDay(currentDate) === targetDayOfWeek) {
+                        const newDocRef = doc(collection(db, "appointments"));
+                        batch.set(newDocRef, getBlockedSlotPayload(currentDate));
+                     }
+                    currentDate = addDays(currentDate, 1);
+                }
+            }
+        }
+        
+        await batch.commit();
+        
+        return { 
+            success: true,
+            message: `Horario bloqueado con éxito para ${barber.name}.`
+        };
+
+    } catch (error) {
+        console.error("Error blocking time slot:", error);
+        const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido.";
+        return { 
+            success: false,
+            message: `Ocurrió un error al procesar la solicitud. ${errorMessage}` 
+        };
+    }
+}
+
+// In-memory store for rate limiting
+const ipRequestStore: Map<string, number[]> = new Map();
+const RATE_LIMIT_WINDOW = 60 * 60 * 1000; // 1 hour in milliseconds
+const MAX_REQUESTS_PER_WINDOW = 5; // Allow 5 attempts per hour
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const requests = ipRequestStore.get(ip) || [];
+  
+  // Filter out requests that are older than the window
+  const recentRequests = requests.filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW);
+  
+  if (recentRequests.length >= MAX_REQUESTS_PER_WINDOW) {
+    return false; // Rate limit exceeded
+  }
+
+  // Add current request timestamp and update the store
+  recentRequests.push(now);
+  ipRequestStore.set(ip, recentRequests);
+
+  return true; // Request is within limits
+}
+
+export async function bookAppointment(prevState: any, formData: FormData) {
+  const headersList = headers();
+  
+  // Rate Limiting Check
+  const ip = headersList.get('x-forwarded-for') ?? '127.0.0.1';
+  if (!checkRateLimit(ip)) {
+      return {
+          success: false,
+          message: 'Has realizado demasiados intentos de reserva. Por favor, inténtalo de nuevo más tarde.',
+      };
+  }
+
+  const data = {
+    name: formData.get("name"),
+    email: formData.get("email"),
+    phone: formData.get("phone"),
+    service: formData.get("service"),
+    date: formData.get("date"),
+    time: formData.get("time"),
+    barberId: formData.get("barberId"),
+  };
+
+  const validatedFields = bookingSchema.safeParse(data);
+
+  if (!validatedFields.success) {
+    return {
+      success: false,
+      message: "Por favor, corrige los errores en el formulario.",
+      errors: validatedFields.error.flatten().fieldErrors,
+    };
+  }
+  
+  const { name, email: clientEmail, phone, service: serviceIds, date, time, barberId } = validatedFields.data;
+  
+  const newAppointmentRef = doc(collection(db, "appointments"));
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const team = await getTeam();
+      const barber = team.find(b => b.id === barberId);
+      
+      if (!barber) {
+          throw new Error("El barbero seleccionado no es válido.");
+      }
+
+      const appointmentsQuery = query(
+        collection(db, "appointments"),
+        where("barberId", "==", barberId),
+        where("date", "==", date),
+        where("time", "==", time)
+      );
+      
+      const existingAppointmentsSnapshot = await getDocs(appointmentsQuery);
+      if (!existingAppointmentsSnapshot.empty) {
+        throw new Error("Este horario acaba de ser reservado por otra persona. Por favor, elige otro.");
+      }
+
+      const barberEmail = barber.email || staticBarberEmails[barberId] || null;
+
+      const appointmentPayload: any = {
+        name,
+        date,
+        barberId,
+        status: 'pending',
+        createdAt: new Date(),
+        type: 'appointment',
+        email: clientEmail,
+        phone: phone,
+        service: serviceIds,
+        barberEmail: barberEmail,
+        time: time,
+      };
+
+      transaction.set(newAppointmentRef, appointmentPayload);
+
+      // Create or update customer profile
+      if (clientEmail) {
+        const customerQuery = query(collection(db, "customers"), where("email", "==", clientEmail));
+        const customerSnapshot = await getDocs(customerQuery);
+        
+        if (customerSnapshot.empty) {
+            // New customer, create a profile
+            const newCustomerRef = doc(collection(db, "customers"));
+            transaction.set(newCustomerRef, {
+                name,
+                email: clientEmail,
+                phone: phone || null,
+                createdAt: new Date(),
+            });
+        } else {
+            // Existing customer, update info if necessary
+            const customerDoc = customerSnapshot.docs[0];
+            const customerData = customerDoc.data();
+            const updates: any = {};
+            if (customerData.name !== name) updates.name = name;
+            if (phone && customerData.phone !== phone) updates.phone = phone;
+            
+            if(Object.keys(updates).length > 0) {
+              transaction.update(customerDoc.ref, updates);
+            }
+        }
+      }
+    });
+    
+    const GMAIL_USER = process.env.GMAIL_USER || 'citasbarbalarga@gmail.com';
+    const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || 'phka jrwd hxaq kryd';
+
+    if (GMAIL_USER && GMAIL_APP_PASSWORD && clientEmail) {
+        try {
+            const team = await getTeam();
+            const barber = team.find(b => b.id === barberId);
+            if (!barber) throw new Error("Barber not found for email sending.");
+
+            const transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: {
+                    user: GMAIL_USER,
+                    pass: GMAIL_APP_PASSWORD,
+                },
+            });
+
+            const serviceIdsArray = serviceIds!.split(',');
+            const chosenServices = allServices.filter(s => serviceIdsArray.includes(s.id));
+            const serviceNames = chosenServices.map(s => s.name).join(', ');
+            const totalPrice = chosenServices.reduce((total, s) => total + parseInt(s.price), 0);
+            const formattedDate = format(parse(date, "yyyy-MM-dd", new Date()), "EEEE, d 'de' LLLL 'de' yyyy", { locale: es });
+            const barbershopAddress = "Calle 22N #6A-30 Ciudad Jardín, Popayán, Cauca, Colombia";
+            const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(barbershopAddress)}`;
+            const whatsappUrl = "https://wa.link/rxl87s";
+            
+            const logoPath = path.join(process.cwd(), 'public', 'multimedia', 'logo-barber.jpg');
+            const logoCid = 'logo-barber';
+
+          const clientEmailHtml = `
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Confirmación de Cita - Barba Larga</title>
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@900&family=Roboto:wght@400;700&display=swap');
+                    body { margin: 0; padding: 0; background-color: #121212; font-family: 'Roboto', Arial, sans-serif; }
+                    .email-container { max-width: 600px; margin: 40px auto; background-color: #1e1e1e; border: 1px solid #39FF14; border-radius: 8px; overflow: hidden; box-shadow: 0 0 20px rgba(57, 255, 20, 0.3); }
+                    .header { text-align: center; padding: 20px; background-color: #1a1a1a; }
+                    .header img { max-width: 120px; border-radius: 50%; }
+                    .content { padding: 30px; color: #e0e0e0; }
+                    .content h1 { color: #ffffff; font-family: 'Orbitron', sans-serif; font-size: 28px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 0 5px #39FF14; }
+                    .content p { line-height: 1.6; margin: 0 0 20px; }
+                    .details-box { background-color: #2a2a2a; border-left: 4px solid #39FF14; padding: 20px; margin: 20px 0; border-radius: 4px; }
+                    .details-box h2 { color: #39FF14; font-size: 20px; margin: 0 0 15px; font-family: 'Orbitron', sans-serif; }
+                    .details-list { list-style: none; padding: 0; margin: 0; }
+                    .details-list li { margin-bottom: 12px; font-size: 16px; display: flex; justify-content: space-between; }
+                    .details-list li strong { color: #ffffff; }
+                    .button-container { text-align: center; margin: 20px 0; }
+                    .button { background-color: #39FF14; color: #121212; padding: 14px 30px; text-decoration: none; border-radius: 50px; font-weight: bold; font-family: 'Orbitron', sans-serif; display: inline-block; box-shadow: 0 0 10px #39FF14; transition: all 0.3s ease; }
+                    .button.whatsapp { background-color: #25D366; color: #ffffff; box-shadow: 0 0 10px #25D366; }
+                    .button.whatsapp:hover { background-color: #1DA851; }
+                    .button:hover { background-color: #ffffff; color: #121212; box-shadow: 0 0 20px #39FF14; }
+                    .footer { background-color: #2a2a2a; color: #888; padding: 20px; text-align: center; font-size: 12px; }
+                </style>
+            </head>
+            <body>
+                <div class="email-container">
+                    <div class="header">
+                        <img src="cid:${logoCid}" alt="Logo de Barba Larga">
+                    </div>
+                    <div class="content">
+                        <h1>¡Cita Confirmada!</h1>
+                        <p>¡Hola, ${name}! Tu cita en <strong>Barba Larga</strong> con <strong>${barber.name}</strong> ha sido agendada con éxito. Prepárate para una experiencia de estilo superior.</p>
+                        
+                        <div class="details-box">
+                            <h2>Detalles de tu Cita</h2>
+                            <ul class="details-list">
+                                <li><strong>Barbero:</strong> <span>${barber.name}</span></li>
+                                <li><strong>Fecha:</strong> <span>${formattedDate}</span></li>
+                                <li><strong>Hora:</strong> <span>${time}</span></li>
+                                <li><strong>Servicio(s):</strong> <span>${serviceNames}</span></li>
+                                <hr style="border: 1px dashed #444; width: 100%; margin: 10px 0;">
+                                <li><strong>Total Estimado:</strong> <span>$${totalPrice.toLocaleString('es-CO')}</span></li>
+                            </ul>
+                        </div>
+
+                        <div class="button-container">
+                            <a href="${directionsUrl}" target="_blank" class="button">CÓMO LLEGAR</a>
+                        </div>
+                        <div class="button-container" style="margin-top: 10px;">
+                            <a href="${whatsappUrl}" target="_blank" class="button whatsapp">CONTACTAR POR WHATSAPP</a>
+                        </div>
+                        
+                        <p style="font-size: 14px; text-align: center; margin-top: 30px;">Si necesitas reprogramar o cancelar, por favor contáctanos con antelación.</p>
+                    </div>
+                    <div class="footer">
+                        <p>&copy; ${new Date().getFullYear()} Barba Larga. Todos los derechos reservados.<br>Popayán, Cauca, Colombia.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            `;
+            
+            await transporter.sendMail({
+                from: `"Barba Larga" <${GMAIL_USER}>`,
+                to: clientEmail,
+                subject: `🚀 Tu Cita en Barba Larga está Confirmada para el ${formattedDate}`,
+                html: clientEmailHtml,
+                attachments: [{
+                    filename: 'logo-barber.jpg',
+                    path: logoPath,
+                    cid: logoCid 
+                }]
+            });
+            
+            const barberEmail = barber.email || staticBarberEmails[barberId] || null;
+            if (barberEmail) {
+                const barberEmailHtml = `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+                        <h1 style="color: #333;">Nueva Reserva Recibida</h1>
+                        <p>Se ha agendado una nueva cita a través de la página web.</p>
+                        <h2>Detalles de la Cita:</h2>
+                        <ul>
+                            <li><strong>Barbero:</strong> ${barber.name}</li>
+                            <li><strong>Cliente:</strong> ${name}</li>
+                            <li><strong>Email del cliente:</strong> ${clientEmail}</li>
+                            ${phone ? `<li><strong>Teléfono del cliente:</strong> ${phone}</li>` : ''}
+                            <li><strong>Fecha:</strong> ${formattedDate}</li>
+                            <li><strong>Hora:</strong> ${time}</li>
+                            <li><strong>Servicio(s):</strong> ${serviceNames}</li>
+                            <li><strong>Total Estimado:</strong> $${totalPrice.toLocaleString('es-CO')}</li>
+                        </ul>
+                    </div>
+                `;
+                
+                await transporter.sendMail({
+                    from: `"Sistema de Reservas" <${GMAIL_USER}>`,
+                    to: barberEmail,
+                    subject: `¡Nueva Reserva! - ${name} para el ${formattedDate}`,
+                    html: barberEmailHtml,
+                });
+            } else {
+                await updateDoc(newAppointmentRef, {
+                    adminNotes: `Failed to send email notification to barber ${barber.name} (email not found).`
+                });
+            }
+
+        } catch (emailError) {
+            console.error("Error sending email(s) via Nodemailer:", emailError);
+            if (newAppointmentRef.path) {
+                await updateDoc(newAppointmentRef, {
+                    adminNotes: `Failed to send email notification. Error: ${emailError instanceof Error ? emailError.message : String(emailError)}`
+                });
+            }
+        }
+    } else if (newAppointmentRef.path){
+        await updateDoc(newAppointmentRef, {
+            adminNotes: `Email notifications not sent because GMAIL_USER or GMAIL_APP_PASSWORD are not set in environment.`
+        });
+    }
+
+    const successMessage = `¡Reserva confirmada! Tu cita para el ${date} a las ${time} ha sido agendada.`;
+      
+    return { 
+        success: true,
+        message: successMessage
+    };
+  } catch (error) {
+    console.error("Error booking appointment:", error);
+    const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido.";
+    return { 
+        success: false,
+        message: `Ocurrió un error al procesar la solicitud. ${errorMessage}` 
+    };
+  }
+}
+
+export async function deleteAppointment(appointmentId: string): Promise<{ success: boolean, message: string }> {
+    if (!appointmentId) {
+        return { success: false, message: "ID de la cita no es válido." };
+    }
+    try {
+        await runTransaction(db, async (transaction) => {
+            const appointmentRef = doc(db, "appointments", appointmentId);
+            
+            // Find and delete the associated transaction if it exists
+            const transactionsQuery = query(collection(db, "transactions"), where("appointmentId", "==", appointmentId));
+            const transactionsSnapshot = await getDocs(transactionsQuery);
+            if (!transactionsSnapshot.empty) {
+                const transactionDoc = transactionsSnapshot.docs[0];
+                transaction.delete(transactionDoc.ref);
+            }
+
+            // Delete the appointment
+            transaction.delete(appointmentRef);
+        });
+
+        return { success: true, message: "Cita y venta asociada eliminadas con éxito." };
+
+    } catch (error) {
+        console.error("Error deleting appointment and associated sale:", error);
+        return { success: false, message: "Ocurrió un error al cancelar la cita." };
+    }
+}
+
+export async function deleteBlockedSlot(slotId: string): Promise<{ success: boolean; message: string }> {
+    if (!slotId) {
+        return { success: false, message: "ID del bloqueo no es válido." };
+    }
+    try {
+        await deleteDoc(doc(db, "appointments", slotId));
+        return { success: true, message: "Bloqueo de tiempo eliminado con éxito." };
+    } catch (error) {
+        console.error("Error deleting blocked slot:", error);
+        return { success: false, message: "Ocurrió un error al eliminar el bloqueo." };
+    }
+}
+
+export async function deleteAllBlockedSlots(barberId: string): Promise<{ success: boolean; message: string }> {
+    if (!barberId) {
+        return { success: false, message: "ID del barbero no proporcionado." };
+    }
+    try {
+        const q = query(
+            collection(db, "appointments"), 
+            where("type", "==", "blocked"),
+            where("barberId", "==", barberId)
+        );
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            return { success: true, message: "No se encontraron horarios bloqueados para este barbero." };
+        }
+
+        const batch = writeBatch(db);
+        querySnapshot.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+        
+        return { success: true, message: `${querySnapshot.size} horario(s) bloqueado(s) para este barbero ha(n) sido eliminado(s) con éxito.` };
+
+    } catch (error) {
+        console.error("Error deleting all blocked slots:", error);
+        return { success: false, message: "Ocurrió un error al eliminar los horarios bloqueados." };
+    }
+}
+
+
+export async function reactivateAppointment(appointmentId: string): Promise<{ success: boolean; message: string }> {
+    if (!appointmentId) {
+        return { success: false, message: "ID de la cita no es válido." };
+    }
+
+    try {
+        await runTransaction(db, async (transaction) => {
+            const appointmentRef = doc(db, "appointments", appointmentId);
+            const appointmentDoc = await transaction.get(appointmentRef);
+
+            if (!appointmentDoc.exists() || appointmentDoc.data().status !== 'completed') {
+                throw new Error("Solo se pueden reactivar citas completadas.");
+            }
+            
+            // Find and delete the associated transaction
+            const transactionsQuery = query(collection(db, "transactions"), where("appointmentId", "==", appointmentId));
+            const transactionsSnapshot = await getDocs(transactionsQuery);
+
+            if (!transactionsSnapshot.empty) {
+                const transactionDoc = transactionsSnapshot.docs[0];
+                transaction.delete(transactionDoc.ref);
+            }
+
+            // Update the appointment status
+            transaction.update(appointmentRef, { status: 'pending' });
+        });
+
+        return { success: true, message: "Cita reactivada. La venta asociada ha sido eliminada." };
+
+    } catch (error) {
+        console.error("Error reactivating appointment:", error);
+        const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido.";
+        return { success: false, message: `Error al reactivar la cita: ${errorMessage}` };
+    }
+}
+
+export async function getAvailableTimesForDate(dateString: string, barberId: string): Promise<string[]> {
+  if (!dateString || !barberId) return [];
+
+  try {
+    const appointmentsCol = collection(db, 'appointments');
+    const q = query(
+      appointmentsCol,
+      where('date', '==', dateString),
+      where('barberId', '==', barberId)
+    );
+
+    const querySnapshot = await getDocs(q);
+    const bookedTimes = new Set<string>();
+
+    const timeTo24 = (time12h: string): number => {
+        if (!time12h) return -1;
+        const [time, modifier] = time12h.split(' ');
+        let [hours] = time.split(':').map(Number);
+        
+        if (modifier?.toUpperCase() === 'PM' && hours < 12) {
+            hours += 12;
+        }
+        if (modifier?.toUpperCase() === 'AM' && hours === 12) {
+            hours = 0;
+        }
+        return hours;
+    };
+
+    querySnapshot.docs.forEach((docSnap) => {
+      const data = docSnap.data();
+      const startTime24 = timeTo24(data.time);
+      
+      if (data.type === 'blocked' && data.endTime) {
+        const endTime24 = timeTo24(data.endTime);
+        // For a block from 4 PM to 6 PM (16 to 18), we want to book slots 16 and 17.
+        // So we loop from start time up to (but not including) end time.
+        for (let hour = startTime24; hour < endTime24; hour++) {
+          const ampm = hour >= 12 ? 'PM' : 'AM';
+          let h = hour % 12;
+          if (h === 0) h = 12; // For 12 PM or 12 AM
+          const timeString = `${h.toString().padStart(2, '0')}:00 ${ampm}`;
+          bookedTimes.add(timeString.toUpperCase().replace(/\s/g, ''));
+        }
+      } else {
+        // Standard 1-hour appointment
+        if (data.time) {
+          bookedTimes.add(data.time.toUpperCase().replace(/\s/g, ''));
+        }
+      }
+    });
+    
+    return Array.from(bookedTimes);
+
+  } catch (error) {
+    console.error('Error fetching booked times from Firestore:', error);
+    return [];
+  }
+}
+
+export type Appointment = {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    service: string;
+    date: string;
+    time: string;
+    endTime?: string;
+    status: 'pending' | 'completed';
+    createdAt: string; 
+    barberId: string;
+    barberEmail?: string | null;
+    type: 'appointment' | 'blocked';
+};
+
+const convertTimeTo24Hour = (time: string) => {
+    if (!time) return "00:00";
+    const [timePart, modifier] = time.split(' ');
+    let [hours, minutes] = timePart.split(':');
+    if (hours === '12') {
+        hours = '00';
+    }
+    if (modifier && modifier.toUpperCase() === 'PM') {
+        hours = (parseInt(hours, 10) + 12).toString();
+    }
+    return `${hours.padStart(2, '0')}:${minutes}`;
+};
+
+export async function getAllAppointments(): Promise<Appointment[]> {
+    try {
+        const today = new Date();
+        const threeMonthsAgo = subMonths(today, 3);
+        const startDateString = format(threeMonthsAgo, "yyyy-MM-dd");
+
+        const appointmentsCol = collection(db, "appointments");
+        
+        const q = query(appointmentsCol, where("date", ">=", startDateString));
+        
+        const querySnapshot = await getDocs(q);
+        
+        const appointments = querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            const createdAtTimestamp = data.createdAt as Timestamp;
+            return {
+                id: doc.id,
+                name: data.name,
+                email: data.email,
+                phone: data.phone,
+                service: data.service,
+                date: data.date,
+                time: data.time,
+                endTime: data.endTime,
+                status: data.status || 'pending',
+                createdAt: createdAtTimestamp.toDate().toISOString(),
+                barberId: data.barberId || 'alan-martinez', // Fallback for old appointments
+                barberEmail: data.barberEmail || null,
+                type: data.type || 'appointment',
+            } as Appointment;
+        });
+
+        // Sort by date (desc) and then time (asc)
+        appointments.sort((a, b) => {
+            const dateA = parseISO(a.date);
+            const dateB = parseISO(b.date);
+            const dateComparison = compareAsc(dateB, dateA);
+
+            if (dateComparison !== 0) {
+                return dateComparison;
+            }
+            
+            const timeA = convertTimeTo24Hour(a.time);
+            const timeB = convertTimeTo24Hour(b.time);
+            return timeA.localeCompare(timeB);
+        });
+
+        return appointments;
+
+    } catch (error) {
+        console.error('Error fetching all appointments:', error);
+        return [];
+    }
+}
+
+
+export async function confirmAppointmentAsSale(appointmentId: string, paymentMethod: 'cash' | 'card' | 'transfer'): Promise<{ success: boolean; message: string }> {
+    if (!appointmentId || !paymentMethod) {
+        return { success: false, message: "Datos inválidos." };
+    }
+
+    try {
+        await runTransaction(db, async (transaction) => {
+            const appointmentRef = doc(db, "appointments", appointmentId);
+            const appointmentDoc = await transaction.get(appointmentRef);
+
+            if (!appointmentDoc.exists()) {
+                throw new Error("La cita no fue encontrada.");
+            }
+
+            const appointmentData = appointmentDoc.data();
+            
+            if (appointmentData.status === 'completed') {
+                throw new Error("Esta cita ya ha sido marcada como completada.");
+            }
+
+            const serviceIds = appointmentData.service.split(',');
+            const chosenServices = allServices.filter(s => serviceIds.includes(s.id));
+            const serviceNames = chosenServices.map(s => s.name).join(', ');
+            const totalAmount = chosenServices.reduce((total, s) => total + parseInt(s.price.replace(/\D/g, '')), 0);
+
+            if (totalAmount <= 0) {
+                throw new Error("El monto del servicio es cero o inválido.");
+            }
+            
+            // 1. Create the transaction document
+            const saleData = {
+                type: 'sale',
+                amount: totalAmount,
+                description: `Venta de servicios: ${serviceNames}`,
+                paymentMethod,
+                date: new Date(),
+                appointmentId: appointmentId, // Link transaction to the appointment
+            };
+            const transactionRef = doc(collection(db, "transactions"));
+            transaction.set(transactionRef, saleData);
+
+            // 2. Update the appointment status
+            transaction.update(appointmentRef, { status: 'completed' });
+        });
+
+        return { success: true, message: "Venta confirmada y registrada con éxito." };
+
+    } catch (error) {
+        console.error("Error confirming appointment sale:", error);
+        const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido.";
+        return { success: false, message: `Error al confirmar la venta: ${errorMessage}` };
+    }
+}
+
+
+export async function verifyAdminPassword(password: string): Promise<{ success: boolean, role?: 'admin' | 'barber' }> {
+  const adminPassword = process.env.ADMIN_PASSWORD || 'Ergo-ñia!';
+  const barberPassword = 'barbersclvb69';
+
+  if (password === adminPassword) {
+    return { success: true, role: 'admin' };
+  }
+  if (password === barberPassword) {
+    return { success: true, role: 'barber' };
+  }
+  return { success: false };
+}
+
+
+// --- Cash Flow Actions ---
+
+export type Transaction = {
+  id: string;
+  type: 'sale' | 'expense';
+  amount: number;
+  description: string;
+  paymentMethod: 'cash' | 'card' | 'transfer';
+  date: Date;
+  productId?: string;
+  appointmentId?: string;
+};
+
+export async function addTransaction(prevState: any, formData: FormData) {
+  const validatedFields = transactionSchema.safeParse({
+    type: formData.get("type"),
+    paymentMethod: formData.get("paymentMethod"),
+    amount: formData.get("amount") ? Number(formData.get("amount")) : undefined,
+    description: formData.get("description") as string || undefined,
+    productId: formData.get("productId") as string || undefined,
+  });
+
+  if (!validatedFields.success) {
+    return {
+      success: false,
+      message: "Datos de formulario inválidos.",
+      errors: validatedFields.error.flatten().fieldErrors,
+    };
+  }
+
+  const { type, paymentMethod, productId, amount, description } = validatedFields.data;
+  
+  if (type === 'sale' && !productId && !description) {
+      return { success: false, message: "Para una venta manual, la descripción es obligatoria."};
+  }
+  if (type === 'expense' && !description) {
+      return { success: false, message: "Para un gasto, la descripción es obligatoria."};
+  }
+  if ((type === 'expense' || (type === 'sale' && !productId)) && (!amount || amount <= 0)) {
+      return { success: false, message: "El monto debe ser un número positivo para registros manuales."};
+  }
+
+
+  try {
+    await runTransaction(db, async (transaction) => {
+        let transactionData: any = {
+            type,
+            paymentMethod,
+            date: new Date(),
+        };
+
+        if (type === 'sale' && productId && productId !== 'manual') {
+            const productRef = doc(db, "products", productId);
+            const productDoc = await transaction.get(productRef);
+
+            if (!productDoc.exists()) {
+                throw new Error("El producto seleccionado no existe.");
+            }
+
+            const productData = productDoc.data();
+            const currentStock = productData.stock;
+            const newStock = currentStock - 1;
+
+            if (newStock < 0) {
+                throw new Error(`No hay suficiente stock para '${productData.name}'.`);
+            }
+            
+            transactionData.amount = productData.sellingPrice;
+            transactionData.description = `Venta de producto: ${productData.name}`;
+            transactionData.productId = productId;
+
+            transaction.update(productRef, { stock: newStock });
+        
+        } else {
+             if (!amount || !description) {
+                throw new Error("Monto y descripción son requeridos para esta transacción.");
+             }
+             transactionData.amount = amount;
+             transactionData.description = description;
+        }
+
+        const transactionRef = doc(collection(db, "transactions"));
+        transaction.set(transactionRef, transactionData);
+    });
+    
+    return { success: true, message: `Transacción de '${type}' registrada con éxito.` };
+  } catch (error) {
+    console.error("Error adding transaction:", error);
+    const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido.";
+    return { 
+        success: false,
+        message: `Error al registrar la transacción: ${errorMessage}` 
+    };
+  }
+}
+
+export async function deleteTransaction(transactionId: string): Promise<{ success: boolean, message: string }> {
+    if (!transactionId) {
+        return { success: false, message: "ID de la transacción no es válido." };
+    }
+
+    try {
+        await runTransaction(db, async (firestoreTransaction) => {
+            const transactionRef = doc(db, "transactions", transactionId);
+            const transactionDoc = await firestoreTransaction.get(transactionRef);
+
+            if (!transactionDoc.exists()) {
+                throw new Error("La transacción no fue encontrada.");
+            }
+
+            const transactionData = transactionDoc.data() as Transaction;
+
+            if (transactionData.type === 'sale' && transactionData.productId) {
+                const productRef = doc(db, "products", transactionData.productId);
+                const productDoc = await firestoreTransaction.get(productRef);
+
+                if (productDoc.exists()) {
+                    const currentStock = productDoc.data().stock;
+                    firestoreTransaction.update(productRef, { stock: currentStock + 1 });
+                } else {
+                    console.warn(`Attempted to restock product ${transactionData.productId} which no longer exists.`);
+                }
+            }
+
+            if (transactionData.appointmentId) {
+                const appointmentRef = doc(db, "appointments", transactionData.appointmentId);
+                const appointmentDoc = await firestoreTransaction.get(appointmentRef);
+
+                if (appointmentDoc.exists() && appointmentDoc.data().status === 'completed') {
+                    firestoreTransaction.update(appointmentRef, { status: 'pending' });
+                } else {
+                    console.warn(`Attempted to revert status for appointment ${transactionData.appointmentId} which no longer exists or wasn't completed.`);
+                }
+            }
+            
+            firestoreTransaction.delete(transactionRef);
+        });
+
+        return { success: true, message: "Transacción eliminada con éxito. El estado y el stock han sido ajustados si fue necesario." };
+
+    } catch (error) {
+        console.error("Error deleting transaction:", error);
+        const errorMessage = error instanceof Error ? error.message : "Ocurrió un error al eliminar la transacción.";
+        return { success: false, message: `Error al eliminar la transacción: ${errorMessage}` };
+    }
+}
+
+
+export async function getRecentTransactions(): Promise<Transaction[]> {
+    try {
+        const transactionsCol = collection(db, "transactions");
+        const q = query(transactionsCol, orderBy("date", "desc"), limit(50));
+        
+        const querySnapshot = await getDocs(q);
+        
+        const transactions = querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                ...data,
+                date: (data.date as Timestamp).toDate(),
+            } as Transaction;
+        });
+
+        return transactions;
+
+    } catch (error) {
+        console.error('Error fetching recent transactions:', error);
+        return [];
+    }
+}
+
+export type FinancialSummary = {
+    todayStats: { revenue: number; salesCount: number };
+    thisWeekStats: { revenue: number; salesCount: number };
+    thisMonthStats: { revenue: number; salesCount: number };
+    last30Days: {
+        totalRevenue: number;
+        totalExpenses: number;
+        netProfit: number;
+    };
+    revenueByMethod: { method: string; total: number }[];
+    chartData: { date: string; revenue: number; expenses: number }[];
+};
+
+
+export async function getFinancialSummary(): Promise<FinancialSummary> {
+    const emptySummary: FinancialSummary = {
+        todayStats: { revenue: 0, salesCount: 0 },
+        thisWeekStats: { revenue: 0, salesCount: 0 },
+        thisMonthStats: { revenue: 0, salesCount: 0 },
+        last30Days: { totalRevenue: 0, totalExpenses: 0, netProfit: 0 },
+        revenueByMethod: [],
+        chartData: [],
+    };
+    
+    try {
+        const today = new Date();
+        const thirtyDaysAgo = startOfDay(subDays(today, 29));
+
+        const transactionsCol = collection(db, "transactions");
+        const q = query(transactionsCol, where("date", ">=", thirtyDaysAgo));
+        const querySnapshot = await getDocs(q);
+        
+        const transactions: Transaction[] = querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                ...data,
+                date: (data.date as Timestamp).toDate(),
+            } as Transaction;
+        });
+
+        const todayStats = { revenue: 0, salesCount: 0 };
+        const thisWeekStats = { revenue: 0, salesCount: 0 };
+        const thisMonthStats = { revenue: 0, salesCount: 0 };
+        
+        let last30DaysRevenue = 0;
+        let last30DaysExpenses = 0;
+
+        const revenueByMethod: Record<string, number> = { cash: 0, card: 0, transfer: 0 };
+        const dailyData: Record<string, { revenue: number, expenses: number }> = {};
+
+        for (let i = 0; i < 30; i++) {
+            const date = subDays(today, i);
+            const formattedDate = format(date, "d MMM", {locale: es});
+            dailyData[formattedDate] = { revenue: 0, expenses: 0 };
+        }
+
+        const weekInterval = { start: startOfWeek(today, { weekStartsOn: 1 }), end: endOfWeek(today, { weekStartsOn: 1 }) };
+        const monthInterval = { start: startOfMonth(today), end: endOfMonth(today) };
+
+
+        transactions.forEach(tx => {
+            if (tx.type === 'sale') {
+                if (isTodayDateFns(tx.date)) {
+                    todayStats.revenue += tx.amount;
+                    todayStats.salesCount += 1;
+                }
+                if (isWithinInterval(tx.date, weekInterval)) {
+                    thisWeekStats.revenue += tx.amount;
+                    thisWeekStats.salesCount += 1;
+                }
+                if (isWithinInterval(tx.date, monthInterval)) {
+                    thisMonthStats.revenue += tx.amount;
+                    thisMonthStats.salesCount += 1;
+                }
+            }
+            
+            if (tx.type === 'sale') {
+                last30DaysRevenue += tx.amount;
+                revenueByMethod[tx.paymentMethod] = (revenueByMethod[tx.paymentMethod] || 0) + tx.amount;
+            } else {
+                last30DaysExpenses += tx.amount;
+            }
+
+            const formattedDate = format(tx.date, "d MMM", {locale: es});
+            if (dailyData[formattedDate]) {
+                if (tx.type === 'sale') {
+                    dailyData[formattedDate].revenue += tx.amount;
+                } else {
+                    dailyData[formattedDate].expenses += tx.amount;
+                }
+            }
+        });
+        
+        const chartData = Object.keys(dailyData).map(date => ({
+            date,
+            revenue: dailyData[date].revenue,
+            expenses: dailyData[date].expenses,
+        })).reverse();
+        
+        return {
+            todayStats,
+            thisWeekStats,
+            thisMonthStats,
+            last30Days: {
+                totalRevenue: last30DaysRevenue,
+                totalExpenses: last30DaysExpenses,
+                netProfit: last30DaysRevenue - last30DaysExpenses,
+            },
+            revenueByMethod: Object.entries(revenueByMethod).map(([method, total]) => ({ method, total })),
+            chartData,
+        };
+
+    } catch (error) {
+        console.error('Error fetching financial summary:', error);
+        return emptySummary;
+    }
+}
+
+
+// --- Inventory Actions ---
+
+export type Product = {
+  id: string;
+  name: string;
+  description?: string;
+  sellingPrice: number;
+  stock: number;
+  createdAt: Date;
+};
+
+const createSlug = (name: string) => {
+    return name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-');
+};
+
+
+export async function addProduct(prevState: any, formData: FormData) {
+  const validatedFields = productSchema.safeParse({
+    name: formData.get("name"),
+    description: formData.get("description"),
+    sellingPrice: formData.get("sellingPrice"),
+    stock: formData.get("stock"),
+  });
+
+  if (!validatedFields.success) {
+    return {
+      success: false,
+      message: "Por favor, corrige los errores en el formulario.",
+      errors: validatedFields.error.flatten().fieldErrors,
+    };
+  }
+
+  try {
+    const { name, ...rest } = validatedFields.data;
+    const productId = createSlug(name);
+    
+    const productRef = doc(db, "products", productId);
+    const productDoc = await getDoc(productRef);
+
+    if (productDoc.exists()) {
+        return {
+            success: false,
+            message: `Un producto con el nombre '${name}' ya existe. Por favor, elige un nombre diferente.`
+        };
+    }
+
+    const productData = {
+        name,
+        ...rest,
+        createdAt: new Date(),
+    };
+    
+    await setDoc(productRef, productData);
+    
+    return { success: true, message: `Producto '${name}' añadido con éxito.` };
+  } catch (error) {
+    console.error("Error adding product:", error);
+    return { 
+        success: false,
+        message: "Ocurrió un error al añadir el producto." 
+    };
+  }
+}
+
+export async function updateProduct(prevState: any, formData: FormData) {
+  const validatedFields = productSchema.safeParse({
+    id: formData.get("id"),
+    name: formData.get("name"),
+    description: formData.get("description"),
+    sellingPrice: formData.get("sellingPrice"),
+    stock: formData.get("stock"),
+  });
+
+  if (!validatedFields.success) {
+    return {
+      success: false,
+      message: "Por favor, corrige los errores.",
+      errors: validatedFields.error.flatten().fieldErrors,
+    };
+  }
+  const { id, ...productData } = validatedFields.data;
+
+  if (!id) {
+    return { success: false, message: "ID del producto no encontrado." };
+  }
+
+  try {
+    const productRef = doc(db, "products", id);
+    await updateDoc(productRef, productData);
+    return { success: true, message: "Producto actualizado con éxito." };
+  } catch (error) {
+    console.error("Error updating product:", error);
+    return { success: false, message: "No se pudo actualizar el producto." };
+  }
+}
+
+export async function deleteProduct(productId: string): Promise<{ success: boolean, message: string }> {
+    if (!productId) {
+        return { success: false, message: "ID del producto no es válido." };
+    }
+    try {
+        await deleteDoc(doc(db, "products", productId));
+        return { success: true, message: "Producto eliminado con éxito." };
+    } catch (error) {
+        console.error("Error deleting product:", error);
+        return { success: false, message: "Ocurrió un error al eliminar el producto." };
+    }
+}
+
+
+export async function getProducts(): Promise<Product[]> {
+    try {
+        const productsCol = collection(db, "products");
+        const q = query(productsCol, orderBy("createdAt", "desc"));
+        
+        const querySnapshot = await getDocs(q);
+        
+        const products = querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                ...data,
+                createdAt: (data.createdAt as Timestamp).toDate(),
+            } as Product;
+        });
+
+        return products;
+
+    } catch (error) {
+        console.error('Error fetching products:', error);
+        return [];
+    }
+}
+
+
+// --- Customer Analytics Actions ---
+
+type CustomerAppointment = Omit<Appointment, 'id' | 'barberEmail' | 'createdAt'> & {
+    cost: number;
+    serviceNames: string;
+    createdAt: string;
+};
+
+export type CustomerAnalytics = {
+  id: string; // email
+  name: string;
+  email: string;
+  phone?: string;
+  totalVisits: number;
+  lastVisitDate: Date | null;
+  lastVisitTime: string | null;
+  status: 'new' | 'stable' | 'irregular' | 'at_risk';
+  totalSpent: number;
+  appointments: CustomerAppointment[];
+};
+
+const getServiceCost = (serviceIds: string): { names: string, price: number } => {
+    const ids = serviceIds.split(',');
+    const services = allServices.filter(s => ids.includes(s.id));
+    const names = services.map(s => s.name).join(', ');
+    const price = services.reduce((acc, s) => acc + parseInt(s.price), 0);
+    return { names, price };
+};
+
+export async function addCustomer(prevState: any, formData: FormData) {
+  const validatedFields = customerSchema.safeParse({
+    name: formData.get("name"),
+    email: formData.get("email"),
+    phone: formData.get("phone"),
+  });
+
+  if (!validatedFields.success) {
+    return {
+      success: false,
+      message: "Por favor, corrige los errores en el formulario.",
+      errors: validatedFields.error.flatten().fieldErrors,
+    };
+  }
+
+  try {
+    const { name, email, phone } = validatedFields.data;
+    
+    const customerQuery = query(collection(db, "customers"), where("email", "==", email));
+    const querySnapshot = await getDocs(customerQuery);
+    
+    if (!querySnapshot.empty) {
+      return { success: false, message: `El cliente con el email '${email}' ya existe.` };
+    }
+
+    const customerData = {
+      name,
+      email,
+      phone: phone || null,
+      createdAt: new Date(),
+    };
+    
+    await addDoc(collection(db, "customers"), customerData);
+    
+    return { success: true, message: `Cliente '${name}' añadido con éxito.` };
+  } catch (error) {
+    console.error("Error adding customer:", error);
+    return { 
+        success: false,
+        message: "Ocurrió un error al añadir el cliente." 
+    };
+  }
+}
+
+export async function deleteCustomers(customerEmails: string[]): Promise<{ success: boolean, message: string }> {
+    if (!customerEmails || customerEmails.length === 0) {
+        return { success: false, message: "No se seleccionaron clientes para eliminar." };
+    }
+
+    try {
+        const batch = writeBatch(db);
+        
+        const q = query(collection(db, "customers"), where("email", "in", customerEmails));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            return { success: false, message: "No se encontraron los clientes para eliminar." };
+        }
+
+        querySnapshot.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+
+        return { success: true, message: `${querySnapshot.size} cliente(s) eliminado(s) con éxito.` };
+
+    } catch (error) {
+        console.error("Error deleting customers:", error);
+        return { success: false, message: "Ocurrió un error al eliminar los clientes." };
+    }
+}
+
+
+export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
+    try {
+        const appointmentsCol = collection(db, "appointments");
+        const customersCol = collection(db, "customers");
+        
+        const appointmentsQuery = query(appointmentsCol, orderBy("date", "desc"));
+        const manualCustomersQuery = query(customersCol);
+
+        const [appointmentsSnapshot, manualCustomersSnapshot] = await Promise.all([
+          getDocs(appointmentsQuery),
+          getDocs(manualCustomersQuery)
+        ]);
+
+        if (appointmentsSnapshot.empty && manualCustomersSnapshot.empty) {
+            return [];
+        }
+        
+        type CustomerData = { 
+            name: string; 
+            email: string;
+            phone?: string;
+            appointments: CustomerAppointment[];
+        };
+
+        const customersData: Record<string, CustomerData> = {};
+
+        // Process customers from manual entries first
+        manualCustomersSnapshot.docs.forEach(doc => {
+            const data = doc.data();
+            const email = data.email.toLowerCase();
+            if (!customersData[email]) {
+                customersData[email] = { 
+                  name: data.name, 
+                  email: data.email, 
+                  phone: data.phone,
+                  appointments: [],
+                };
+            }
+        });
+        
+        // Process customers from appointments
+        appointmentsSnapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.type === 'appointment' && data.email) {
+                const email = data.email.toLowerCase();
+                if (!customersData[email]) {
+                    customersData[email] = { 
+                      name: data.name, 
+                      email: data.email, 
+                      phone: data.phone,
+                      appointments: [],
+                    };
+                } else {
+                    // Update name and phone from most recent appointment if it's different
+                    customersData[email].name = data.name;
+                    customersData[email].phone = data.phone || customersData[email].phone;
+                }
+                
+                const { names, price } = getServiceCost(data.service);
+                const createdAtTimestamp = data.createdAt as Timestamp;
+
+                customersData[email].appointments.push({
+                    name: data.name,
+                    email: data.email,
+                    phone: data.phone,
+                    service: data.service,
+                    date: data.date,
+                    time: data.time,
+                    endTime: data.endTime,
+                    status: data.status,
+                    barberId: data.barberId,
+                    type: data.type,
+                    cost: price,
+                    serviceNames: names,
+                    createdAt: createdAtTimestamp.toDate().toISOString(),
+                });
+            }
+        });
+
+        const analytics: CustomerAnalytics[] = [];
+        const today = new Date();
+
+        for (const email in customersData) {
+            const customer = customersData[email];
+            const sortedAppointments = customer.appointments.sort((a, b) => {
+                const dateA = parseISO(`${a.date}T${convertTimeTo24Hour(a.time)}`);
+                const dateB = parseISO(`${b.date}T${convertTimeTo24Hour(b.time)}`);
+                return compareAsc(dateB, dateA);
+            });
+            
+            const completedAppointments = sortedAppointments.filter(app => app.status === 'completed');
+
+            const totalVisits = completedAppointments.length;
+            const totalSpent = completedAppointments.reduce((acc, app) => acc + (app.cost || 0), 0);
+            
+            let lastVisitDate: Date | null = null;
+            let lastVisitTime: string | null = null;
+            
+            if (completedAppointments.length > 0) {
+              lastVisitDate = parseISO(completedAppointments[0].date);
+              lastVisitTime = completedAppointments[0].time;
+            }
+            
+            const daysSinceLastVisit = lastVisitDate ? differenceInDays(today, lastVisitDate) : Infinity;
+
+            let status: CustomerAnalytics['status'] = 'new';
+            if (totalVisits >= 3) {
+                if (daysSinceLastVisit <= 90) status = 'stable';
+                else if (daysSinceLastVisit <= 180) status = 'irregular';
+                else status = 'at_risk';
+            } else if (totalVisits > 0) {
+                if (daysSinceLastVisit <= 90) status = 'new';
+                else if (daysSinceLastVisit <= 180) status = 'irregular';
+                else status = 'at_risk';
+            }
+
+            analytics.push({
+                id: email,
+                name: customer.name,
+                email: customer.email,
+                phone: customer.phone,
+                totalVisits,
+                lastVisitDate,
+                lastVisitTime,
+                status,
+                totalSpent,
+                appointments: sortedAppointments,
+            });
+        }
+        
+        analytics.sort((a, b) => {
+            const lastVisitA = a.appointments[0]?.date ? parseISO(a.appointments[0].date) : null;
+            const lastVisitB = b.appointments[0]?.date ? parseISO(b.appointments[0].date) : null;
+
+            if (!lastVisitA) return 1;
+            if (!lastVisitB) return -1;
+            return compareAsc(lastVisitB, lastVisitA);
+        });
+
+        return analytics;
+
+    } catch (error) {
+        console.error('Error fetching customer analytics:', error);
+        return [];
+    }
+}
+
+
+// --- Team Management Actions ---
+export type TeamMember = {
+  id: string;
+  name: string;
+  email: string | null;
+  role: string;
+  description: string;
+  imageUrl: string;
+  isAvailable: boolean;
+};
+
+const createTeamMemberId = (name: string) => {
+    return name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-');
+};
+
+const newTeamMemberSchema = z.object({
+  name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
+  email: z.string().email({ message: "Por favor, introduce un correo electrónico válido." }).nullable().optional(),
+  role: z.string().min(3, { message: "El rol es requerido." }),
+  description: z.string().min(10, { message: "La descripción debe tener al menos 10 caracteres." }),
+  imageUrl: z.string().min(1, { message: "Por favor, introduce una ruta de imagen válida." }),
+  isAvailable: z.boolean().default(true),
+});
+
+export async function addTeamMember(prevState: any, formData: FormData) {
+  const validatedFields = newTeamMemberSchema.safeParse({
+    name: formData.get("name"),
+    email: formData.get("email") || null,
+    role: formData.get("role"),
+    description: formData.get("description"),
+    imageUrl: formData.get("imageUrl"),
+    isAvailable: formData.get("isAvailable") === 'on',
+  });
+  
+  if (!validatedFields.success) {
+    return {
+      success: false,
+      message: "Por favor, corrige los errores.",
+      errors: validatedFields.error.flatten().fieldErrors,
+    };
+  }
+
+  const { name, ...memberData } = validatedFields.data;
+  const memberId = createTeamMemberId(name);
+
+  try {
+    const memberRef = doc(db, "team", memberId);
+    const docSnap = await getDoc(memberRef);
+    if(docSnap.exists()){
+      return { success: false, message: `Un colaborador con el nombre '${name}' ya existe.` };
+    }
+    await setDoc(memberRef, { name, ...memberData });
+    return { success: true, message: `Colaborador '${name}' añadido con éxito.` };
+  } catch (error) {
+    console.error("Error adding team member:", error);
+    return { success: false, message: "No se pudo añadir el colaborador." };
+  }
+}
+
+const teamMemberSchema = z.object({
+  id: z.string(),
+  name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
+  email: z.string().email({ message: "Email inválido." }).nullable().optional().or(z.literal("")),
+  description: z.string().min(10, { message: "La descripción debe tener al menos 10 caracteres." }),
+  imageUrl: z.string().url({ message: "Por favor, introduce una URL de imagen válida." }),
+  isAvailable: z.boolean().default(true),
+  role: z.string(),
+});
+
+const initialTeamData = [
+    {
+        id: "alan-martinez",
+        name: "Alan Martinez",
+        role: "Barbero",
+        email: "stuntpk123@gmail.com",
+        description: "Te brindamos una experiencia única y personalizada 💫💇‍♂️.",
+        imageUrl: "/multimedia/nuestro-equipo-alan.jpg",
+        isAvailable: true,
+    },
+    {
+        id: "stiven-dorado",
+        name: "Stiven Dorado",
+        role: "Barbero",
+        email: "qauay4@gmail.com",
+        description: "Dicen por ahí que conmigo es pura buena energía. Es conocido por su atención a todos los detalles y un resultado impecable.",
+        imageUrl: "/multimedia/nuestro-equipo-stiven.png",
+        isAvailable: true,
+    },
+    {
+        id: "barba-larga-brand",
+        name: "Barba Larga",
+        role: "Nuestra Filosofía",
+        email: null,
+        description: "Más que una barbería, un lugar donde el estilo y la confianza se forjan con maestría y dedicación.",
+        imageUrl: "/multimedia/logo-barber.jpg",
+        isAvailable: false,
+    },
+    {
+        id: "new-stylist-female",
+        name: "Próximamente",
+        role: "Estilista",
+        email: null,
+        description: "Una nueva experta en estilo se unirá pronto a nuestro equipo para ofrecerte las últimas tendencias y un cuidado excepcional.",
+        imageUrl: "https://picsum.photos/seed/stylist/600/600",
+        isAvailable: false,
+    },
+    {
+        id: "new-barber-male",
+        name: "Próximamente",
+        role: "Barbero",
+        email: null,
+        description: "Estamos ampliando nuestro equipo con otro talentoso barbero. ¡Mantente atento para conocer a la nueva cara de Barba Larga!",
+        imageUrl: "https://picsum.photos/seed/barber/600/600",
+        isAvailable: false,
+    }
+];
+
+export async function getTeam(): Promise<TeamMember[]> {
+    try {
+        const teamCol = collection(db, "team");
+        const querySnapshot = await getDocs(query(teamCol));
+
+        if (querySnapshot.empty) {
+            console.log("Team collection is empty, seeding from static data...");
+            const batch = writeBatch(db);
+            initialTeamData.forEach(member => {
+                const memberRef = doc(db, "team", member.id);
+                batch.set(memberRef, member);
+            });
+            await batch.commit();
+            
+            const seededSnapshot = await getDocs(query(teamCol));
+            return seededSnapshot.docs.map(docSnap => ({
+                id: docSnap.id,
+                ...docSnap.data(),
+                email: docSnap.data().email || null,
+            } as TeamMember));
+        }
+        
+        const team = querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                name: data.name,
+                email: data.email || null,
+                role: data.role,
+                description: data.description,
+                imageUrl: data.imageUrl,
+                isAvailable: data.isAvailable,
+            } as TeamMember;
+        });
+        return team;
+
+    } catch (error) {
+        console.error('Error fetching team:', error);
+        return [];
+    }
+}
+
+
+export async function updateTeamMember(prevState: any, formData: FormData) {
+  const dataToValidate = {
+    id: formData.get("id"),
+    name: formData.get("name"),
+    email: formData.get("email"),
+    description: formData.get("description"),
+    imageUrl: formData.get("imageUrl"),
+    isAvailable: formData.get("isAvailable") === 'on',
+    role: formData.get("role"),
+  };
+
+  const validatedFields = teamMemberSchema.safeParse(dataToValidate);
+
+  if (!validatedFields.success) {
+    return {
+      success: false,
+      message: "Por favor, corrige los errores.",
+      errors: validatedFields.error.flatten().fieldErrors,
+    };
+  }
+  
+  const { id, ...memberData } = validatedFields.data;
+
+  if (!id) {
+    return { success: false, message: "ID del miembro del equipo no encontrado." };
+  }
+
+  try {
+    const memberRef = doc(db, "team", id);
+    await updateDoc(memberRef, {
+        name: memberData.name,
+        email: memberData.email || null,
+        description: memberData.description,
+        imageUrl: memberData.imageUrl,
+        isAvailable: memberData.isAvailable,
+        role: memberData.role,
+    });
+    return { success: true, message: "Colaborador actualizado con éxito." };
+  } catch (error) {
+    console.error("Error updating team member:", error);
+    return { success: false, message: "No se pudo actualizar el colaborador." };
+  }
+}
+
+export async function toggleTeamMemberAvailability(id: string, isAvailable: boolean): Promise<{ success: boolean, message: string }> {
+    if (!id) {
+        return { success: false, message: "ID del colaborador no es válido." };
+    }
+    try {
+        const memberRef = doc(db, "team", id);
+        await updateDoc(memberRef, { isAvailable });
+        return { success: true, message: `Disponibilidad actualizada.` };
+    } catch (error) {
+        console.error("Error updating availability:", error);
+        return { success: false, message: "No se pudo actualizar la disponibilidad." };
+    }
+}
+
+export async function deleteTeamMember(memberId: string): Promise<{ success: boolean; message: string }> {
+    if (!memberId) {
+        return { success: false, message: "ID del colaborador no es válido." };
+    }
+    // Prevent deletion of the main brand card
+    if (memberId === 'barba-larga-brand') {
+        return { success: false, message: "No se puede eliminar la tarjeta de la marca." };
+    }
+    try {
+        await deleteDoc(doc(db, "team", memberId));
+        return { success: true, message: "Colaborador eliminado con éxito." };
+    } catch (error) {
+        console.error("Error deleting team member:", error);
+        return { success: false, message: "No se pudo eliminar el colaborador." };
+    }
+}
+    
+
+// --- Notification Actions ---
+
+export type Notification = {
+    id: string;
+    title: string;
+    description: string;
+    createdAt: Date;
+};
+
+const initialNotifications = [
+    {
+      title: "¡Bienvenido a Barba Larga!",
+      description: "Tu estilo, nuestra pasión. Agenda tu cita y vive la experiencia."
+    },
+    {
+      title: "Servicio Premium",
+      description: "Prueba La Experiencia Alfa. El ritual definitivo para el hombre que lo quiere todo."
+    },
+    {
+      title: "Asesor de Estilo IA",
+      description: "¿No sabes qué hacerte? Deja que nuestra IA te recomiende el look perfecto."
+    }
+];
+
+export async function getNotifications(): Promise<Omit<Notification, 'createdAt'>[]> {
+    try {
+        const notificationsCol = collection(db, "notifications");
+        const q = query(notificationsCol, orderBy("createdAt", "desc"));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            console.log("Notifications collection is empty, seeding from static data...");
+            const batch = writeBatch(db);
+            initialNotifications.forEach(notif => {
+                const docRef = doc(collection(db, "notifications"));
+                batch.set(docRef, { ...notif, createdAt: new Date() });
+            });
+            await batch.commit();
+            
+            // Re-fetch after seeding
+            const seededSnapshot = await getDocs(q);
+            return seededSnapshot.docs.map(doc => ({
+                id: doc.id,
+                title: doc.data().title,
+                description: doc.data().description,
+            }));
+        }
+
+        return querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            title: doc.data().title,
+            description: doc.data().description,
+        }));
+
+    } catch (error) {
+        console.error('Error fetching notifications:', error);
+        return [];
+    }
+}
+
+export async function addNotification(prevState: any, formData: FormData) {
+  const validatedFields = notificationSchema.safeParse({
+    title: formData.get("title"),
+    description: formData.get("description"),
+  });
+
+  if (!validatedFields.success) {
+    return {
+      success: false,
+      message: "Por favor, corrige los errores en el formulario.",
+      errors: validatedFields.error.flatten().fieldErrors,
+    };
+  }
+
+  try {
+    const { title, description } = validatedFields.data;
+    await addDoc(collection(db, "notifications"), {
+        title,
+        description,
+        createdAt: new Date(),
+    });
+    return { success: true, message: "Notificación añadida con éxito." };
+  } catch (error) {
+    console.error("Error adding notification:", error);
+    return { success: false, message: "Ocurrió un error al añadir la notificación." };
+  }
+}
+
+export async function updateNotification(prevState: any, formData: FormData) {
+    const validatedFields = notificationSchema.safeParse({
+        id: formData.get("id"),
+        title: formData.get("title"),
+        description: formData.get("description"),
+    });
+
+    if (!validatedFields.success) {
+        return {
+          success: false,
+          message: "Por favor, corrige los errores.",
+          errors: validatedFields.error.flatten().fieldErrors,
+        };
+    }
+    const { id, ...notificationData } = validatedFields.data;
+
+    if (!id) {
+        return { success: false, message: "ID de la notificación no encontrado." };
+    }
+
+    try {
+        const notificationRef = doc(db, "notifications", id);
+        await updateDoc(notificationRef, {
+            title: notificationData.title,
+            description: notificationData.description,
+        });
+        return { success: true, message: "Notificación actualizada con éxito." };
+    } catch (error) {
+        console.error("Error updating notification:", error);
+        return { success: false, message: "No se pudo actualizar la notificación." };
+    }
+}
+
+export async function deleteNotification(notificationId: string): Promise<{ success: boolean; message: string }> {
+    if (!notificationId) {
+        return { success: false, message: "ID de la notificación no es válido." };
+    }
+    try {
+        await deleteDoc(doc(db, "notifications", notificationId));
+        return { success: true, message: "Notificación eliminada con éxito." };
+    } catch (error) {
+        console.error("Error deleting notification:", error);
+        return { success: false, message: "Ocurrió un error al eliminar la notificación." };
+    }
+}
+    
+    
+
+    
+
+    
+    
+    
+
+    
+
+
+
+
+
+
+
