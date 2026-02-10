@@ -27,12 +27,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={`${poppins.variable}`}>
+    <html lang="es" className={`${poppins.variable}`} suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="theme-color" content="#20120b" />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <AudioStoreProvider>
           <BookingProvider>
             {children}

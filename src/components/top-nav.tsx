@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Key } from "lucide-react";
 
-type Scene = 'home' | 'about' | 'team' | 'services' | 'booking' | 'ai-advisor' | 'location';
+type Scene = 'home' | 'about' | 'team' | 'services' | 'booking' | 'ai-advisor' | 'location' | 'contact';
 
 export const TopNav = ({ activeScene, onNavigate }: { activeScene: Scene, onNavigate: (scene: Scene) => void }) => (
     <header className="absolute top-0 left-0 right-0 p-6 z-10 animate-fade-in-down">

@@ -17,20 +17,21 @@ import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
 import { getTeam, type TeamMember as TeamMemberType } from "@/app/actions";
 import { useScissorsSound } from "@/hooks/use-scissors-sound";
+import { getSafeImageUrl } from "@/lib/image-validation";
 
 type Scene = 'home' | 'about' | 'team' | 'services' | 'booking' | 'ai-advisor' | 'location' | 'contact';
 
 const getIcon = (iconName: string) => {
-    switch (iconName) {
-        case 'User': return User;
-        case 'Group': return Group;
-        default: return User;
-    }
+  switch (iconName) {
+    case 'User': return User;
+    case 'Group': return Group;
+    default: return User;
+  }
 }
 
 const TeamMemberCard = ({ member, isSelected, onSelect }: { member: TeamMemberType & { icon: string, imageHint: string }, isSelected: boolean, onSelect: (id: string) => void }) => {
   const Icon = getIcon(member.icon);
-  
+
   return (
     <div className={cn(
       "group perspective w-full h-[360px]",
@@ -40,7 +41,7 @@ const TeamMemberCard = ({ member, isSelected, onSelect }: { member: TeamMemberTy
         {/* CARA FRONTAL */}
         <div className="card-face card-face-front glass-card-effect overflow-hidden">
           <Image
-            src={member.imageUrl}
+            src={getSafeImageUrl(member.imageUrl)}
             alt={member.name}
             fill
             className={cn(
@@ -48,6 +49,10 @@ const TeamMemberCard = ({ member, isSelected, onSelect }: { member: TeamMemberTy
               !member.isAvailable && "grayscale blur-sm"
             )}
             data-ai-hint={member.imageHint}
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.src = "/multimedia/logo-barber.jpg";
+            }}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent" />
           <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
@@ -60,7 +65,7 @@ const TeamMemberCard = ({ member, isSelected, onSelect }: { member: TeamMemberTy
             </div>
           )}
           {!member.isAvailable && (
-             <div className="absolute top-4 right-4 bg-muted text-muted-foreground rounded-full p-2">
+            <div className="absolute top-4 right-4 bg-muted text-muted-foreground rounded-full p-2">
               <Lock className="h-5 w-5" />
             </div>
           )}
@@ -71,10 +76,14 @@ const TeamMemberCard = ({ member, isSelected, onSelect }: { member: TeamMemberTy
           <div className="relative w-full h-full">
             {/* Fondo con imagen borrosa */}
             <Image
-              src={member.imageUrl}
+              src={getSafeImageUrl(member.imageUrl)}
               alt={member.name}
               fill
               className="object-cover scale-125 blur-lg brightness-50"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.src = "/multimedia/logo-barber.jpg";
+              }}
             />
             {/* Contenedor con efecto de vidrio */}
             <div className="absolute inset-0 glass-card-effect flex flex-col justify-between p-6">
@@ -86,19 +95,19 @@ const TeamMemberCard = ({ member, isSelected, onSelect }: { member: TeamMemberTy
                 </p>
               </div>
               <button
-                  onClick={() => member.isAvailable && onSelect(member.id)}
-                  disabled={!member.isAvailable}
-                  className={cn(
-                    "liquid-glass-button mt-4 w-full",
-                    isSelected && member.isAvailable ? "phone" : "bg-black/20",
-                    !member.isAvailable && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  {member.isAvailable ? (
-                    isSelected ? <><Check className="mr-2 h-4 w-4" /> Seleccionado</> : "Elegir"
-                  ) : (
-                    <><Lock className="mr-2 h-4 w-4" /> No disponible</>
-                  )}
+                onClick={() => member.isAvailable && onSelect(member.id)}
+                disabled={!member.isAvailable}
+                className={cn(
+                  "liquid-glass-button mt-4 w-full",
+                  isSelected && member.isAvailable ? "phone" : "bg-black/20",
+                  !member.isAvailable && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                {member.isAvailable ? (
+                  isSelected ? <><Check className="mr-2 h-4 w-4" /> Seleccionado</> : "Elegir"
+                ) : (
+                  <><Lock className="mr-2 h-4 w-4" /> No disponible</>
+                )}
               </button>
             </div>
           </div>
@@ -119,31 +128,31 @@ export function TeamSection({ onNavigate }: { onNavigate: (scene: Scene) => void
   const playScissorsSound = useScissorsSound();
 
   const containerRef = React.useRef<HTMLElement>(null);
-  
+
   React.useEffect(() => {
     const fetchTeam = async () => {
-        try {
-            const teamData = await getTeam();
-            // Statically add icon and imageHint for design purposes as they are not in DB
-            const extendedTeamData = teamData.map(member => ({
-              ...member,
-              icon: member.role === "Nuestra Filosofía" ? 'Group' : 'User',
-              imageHint: member.role === "Nuestra Filosofía" ? 'company logo' : (member.name.toLowerCase().includes("próximamente") && member.role === 'Estilista' ? 'female placeholder' : 'barber portrait')
-            }));
+      try {
+        const teamData = await getTeam();
+        // Statically add icon and imageHint for design purposes as they are not in DB
+        const extendedTeamData = teamData.map(member => ({
+          ...member,
+          icon: member.role === "Nuestra Filosofía" ? 'Group' : 'User',
+          imageHint: member.role === "Nuestra Filosofía" ? 'company logo' : (member.name.toLowerCase().includes("próximamente") && member.role === 'Estilista' ? 'female placeholder' : 'barber portrait')
+        }));
 
-            // Sort team members: active ones first
-            extendedTeamData.sort((a, b) => {
-                if (a.isAvailable && !b.isAvailable) return -1;
-                if (!a.isAvailable && b.isAvailable) return 1;
-                return 0;
-            });
-            
-            setTeam(extendedTeamData);
-        } catch (error) {
-            console.error("Failed to fetch team:", error);
-        } finally {
-            setLoading(false);
-        }
+        // Sort team members: active ones first
+        extendedTeamData.sort((a, b) => {
+          if (a.isAvailable && !b.isAvailable) return -1;
+          if (!a.isAvailable && b.isAvailable) return 1;
+          return 0;
+        });
+
+        setTeam(extendedTeamData);
+      } catch (error) {
+        console.error("Failed to fetch team:", error);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchTeam();
   }, []);
@@ -161,7 +170,7 @@ export function TeamSection({ onNavigate }: { onNavigate: (scene: Scene) => void
     const newBarberId = isDeselecting ? null : id;
     setSelectedBarberId(newBarberId);
     playScissorsSound();
-    
+
     if (!isDeselecting) {
       setTimeout(() => {
         api?.scrollTo(0, true);
@@ -173,14 +182,14 @@ export function TeamSection({ onNavigate }: { onNavigate: (scene: Scene) => void
       }, 300);
     }
   }
-  
+
   useGSAP(() => {
     if (loading) return;
     gsap.fromTo(
-      ".carousel-item-team", 
+      ".carousel-item-team",
       { opacity: 0, scale: 0.9, y: 30 },
-      { 
-        opacity: 1, 
+      {
+        opacity: 1,
         scale: 1,
         y: 0,
         duration: 0.8,
@@ -198,11 +207,11 @@ export function TeamSection({ onNavigate }: { onNavigate: (scene: Scene) => void
       setCanScrollPrev(api.canScrollPrev());
       setCanScrollNext(api.canScrollNext());
     };
-    
+
     api.on('select', onSelect);
     api.on('reInit', onSelect);
     onSelect();
-    
+
     return () => {
       api.off('select', onSelect);
     };
@@ -211,64 +220,64 @@ export function TeamSection({ onNavigate }: { onNavigate: (scene: Scene) => void
 
   return (
     <section ref={containerRef} id="team" className="w-full max-w-7xl mx-auto flex flex-col justify-center px-4 pt-0 pb-12 md:pb-24">
-       <div className="flex flex-col items-center text-center mb-8">
-            <h2 className="font-headline text-3xl md:text-4xl font-bold tracking-tight">EQUIPO</h2>
-            <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
-                {selectedServices.length > 0 ? "Elige con quién quieres tu servicio." : "Conoce a nuestros expertos en estilo."}
-            </p>
+      <div className="flex flex-col items-center text-center mb-8">
+        <h2 className="font-headline text-3xl md:text-4xl font-bold tracking-tight">EQUIPO</h2>
+        <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
+          {selectedServices.length > 0 ? "Elige con quién quieres tu servicio." : "Conoce a nuestros expertos en estilo."}
+        </p>
+      </div>
+      {loading ? (
+        <div className="flex justify-center items-center h-[360px]">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
         </div>
-        {loading ? (
-             <div className="flex justify-center items-center h-[360px]">
-                <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      ) : (
+        <div className="relative">
+          <Carousel
+            setApi={setApi}
+            plugins={[plugin.current]}
+            className="w-full"
+            opts={{ align: "start", loop: team.length > 2 }}
+            key={selectedBarberId}
+          >
+            <CarouselContent className="-ml-4">
+              {teamMembers.map((member) => (
+                <CarouselItem
+                  key={member.id}
+                  className="carousel-item-team md:basis-1/2 lg:basis-1/3 pl-4"
+                >
+                  <TeamMemberCard
+                    member={member}
+                    isSelected={selectedBarberId === member.id}
+                    onSelect={handleSelectBarber}
+                  />
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+          </Carousel>
+          <button
+            onClick={() => api?.scrollPrev()}
+            disabled={!canScrollPrev}
+            className="thick-glass-arrow left-2 md:left-4 focus:outline-none transition-transform duration-300 ease-in-out hover:scale-110"
+          >
+            <div className="thick-glass-button-inner">
+              <div className="thick-glass-button-content">
+                <ArrowLeft className="h-6 w-6 text-white" />
+              </div>
             </div>
-        ) : (
-            <div className="relative">
-            <Carousel
-                setApi={setApi}
-                plugins={[plugin.current]}
-                className="w-full"
-                opts={{ align: "start", loop: team.length > 2 }}
-                key={selectedBarberId}
-                >
-                <CarouselContent className="-ml-4">
-                    {teamMembers.map((member) => (
-                    <CarouselItem
-                        key={member.id}
-                        className="carousel-item-team md:basis-1/2 lg:basis-1/3 pl-4"
-                    >
-                        <TeamMemberCard
-                        member={member}
-                        isSelected={selectedBarberId === member.id}
-                        onSelect={handleSelectBarber}
-                        />
-                    </CarouselItem>
-                    ))}
-                </CarouselContent>
-            </Carousel>
-            <button 
-                onClick={() => api?.scrollPrev()} 
-                disabled={!canScrollPrev} 
-                className="thick-glass-arrow left-2 md:left-4 focus:outline-none transition-transform duration-300 ease-in-out hover:scale-110"
-                >
-                <div className="thick-glass-button-inner">
-                    <div className="thick-glass-button-content">
-                        <ArrowLeft className="h-6 w-6 text-white" />
-                    </div>
-                </div>
-            </button>
-            <button 
-                onClick={() => api?.scrollNext()} 
-                disabled={!canScrollNext}
-                className="thick-glass-arrow right-2 md:right-4 focus:outline-none transition-transform duration-300 ease-in-out hover:scale-110"
-                >
-                <div className="thick-glass-button-inner">
-                    <div className="thick-glass-button-content">
-                        <ArrowRight className="h-6 w-6 text-white" />
-                    </div>
-                </div>
-            </button>
+          </button>
+          <button
+            onClick={() => api?.scrollNext()}
+            disabled={!canScrollNext}
+            className="thick-glass-arrow right-2 md:right-4 focus:outline-none transition-transform duration-300 ease-in-out hover:scale-110"
+          >
+            <div className="thick-glass-button-inner">
+              <div className="thick-glass-button-content">
+                <ArrowRight className="h-6 w-6 text-white" />
+              </div>
             </div>
-        )}
-   </section>
+          </button>
+        </div>
+      )}
+    </section>
   );
 }

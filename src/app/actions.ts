@@ -16,16 +16,16 @@ import path from 'path';
 import { headers } from 'next/headers';
 
 const bookingSchema = z.object({
-  id: z.string().optional(), // For updates
-  barberId: z.string().min(1, { message: "Por favor, selecciona un barbero." }),
-  name: z.string()
-    .min(2, { message: "El nombre debe tener al menos 2 caracteres." })
-    .regex(/^[a-zA-Z\u00C0-\u017F\s'-]+$/, { message: "El nombre solo puede contener letras, espacios y guiones." }),
-  email: z.string().email({ message: "Por favor, introduce un correo electrónico válido." }).optional().or(z.literal("")),
-  phone: z.string().optional(),
-  service: z.string().min(1, { message: "Por favor, selecciona al menos un servicio." }),
-  date: z.string({ required_error: "Por favor, selecciona una fecha." }),
-  time: z.string({ required_error: "Por favor, selecciona una hora." }),
+    id: z.string().optional(), // For updates
+    barberId: z.string().min(1, { message: "Por favor, selecciona un barbero." }),
+    name: z.string()
+        .min(2, { message: "El nombre debe tener al menos 2 caracteres." })
+        .regex(/^[a-zA-Z\u00C0-\u017F\s'-]+$/, { message: "El nombre solo puede contener letras, espacios y guiones." }),
+    email: z.string().email({ message: "Por favor, introduce un correo electrónico válido." }).optional().or(z.literal("")),
+    phone: z.string().optional(),
+    service: z.string().min(1, { message: "Por favor, selecciona al menos un servicio." }),
+    date: z.string({ required_error: "Por favor, selecciona una fecha." }),
+    time: z.string({ required_error: "Por favor, selecciona una hora." }),
 });
 
 const blockTimeSchema = z.object({
@@ -40,28 +40,28 @@ const blockTimeSchema = z.object({
 
 // Updated schema to be more flexible
 const transactionSchema = z.object({
-  type: z.enum(["sale", "expense"], { required_error: "Selecciona el tipo de transacción." }),
-  paymentMethod: z.enum(["cash", "card", "transfer"], { required_error: "Selecciona un método de pago." }),
-  // Manual entries will have these
-  amount: z.coerce.number().positive({ message: "El monto debe ser un número positivo." }).optional(),
-  description: z.string().min(3, { message: "La descripción debe tener al menos 3 caracteres." }).optional(),
-  // Product sales will have this
-  productId: z.string().optional(),
+    type: z.enum(["sale", "expense"], { required_error: "Selecciona el tipo de transacción." }),
+    paymentMethod: z.enum(["cash", "card", "transfer"], { required_error: "Selecciona un método de pago." }),
+    // Manual entries will have these
+    amount: z.coerce.number().positive({ message: "El monto debe ser un número positivo." }).optional(),
+    description: z.string().min(3, { message: "La descripción debe tener al menos 3 caracteres." }).optional(),
+    // Product sales will have this
+    productId: z.string().optional(),
 });
 
 
 const productSchema = z.object({
-  id: z.string().optional(), // For updates
-  name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
-  description: z.string().optional(),
-  sellingPrice: z.coerce.number().positive({ message: "El precio de venta debe ser positivo." }),
-  stock: z.coerce.number().int().min(0, { message: "El stock no puede ser negativo." }),
+    id: z.string().optional(), // For updates
+    name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
+    description: z.string().optional(),
+    sellingPrice: z.coerce.number().positive({ message: "El precio de venta debe ser positivo." }),
+    stock: z.coerce.number().int().min(0, { message: "El stock no puede ser negativo." }),
 });
 
 const customerSchema = z.object({
-  name: z.string().min(2, { message: "El nombre debe tener al menos 2 caracteres." }),
-  email: z.string().email({ message: "Por favor, introduce un correo electrónico válido." }),
-  phone: z.string().optional(),
+    name: z.string().min(2, { message: "El nombre debe tener al menos 2 caracteres." }),
+    email: z.string().email({ message: "Por favor, introduce un correo electrónico válido." }),
+    phone: z.string().optional(),
 });
 
 const notificationSchema = z.object({
@@ -115,17 +115,17 @@ export async function blockTimeSlot(prevState: any, formData: FormData) {
     }
 
     const { name, date, time, endTime, barberId, recurrence } = validatedFields.data;
-    
+
     const team = await getTeam();
     const barber = team.find(b => b.id === barberId);
     if (!barber) {
-      return { success: false, message: "El barbero seleccionado no es válido." };
+        return { success: false, message: "El barbero seleccionado no es válido." };
     }
 
     try {
         const batch = writeBatch(db);
         const startDate = parseISO(date);
-        
+
         const getBlockedSlotPayload = (currentDate: Date) => ({
             name,
             date: format(currentDate, "yyyy-MM-dd"),
@@ -144,7 +144,7 @@ export async function blockTimeSlot(prevState: any, formData: FormData) {
         } else {
             const monthEnd = endOfMonth(startDate);
             let currentDate = startDate;
-            
+
             if (recurrence === 'daily') {
                 while (currentDate <= monthEnd) {
                     const newDocRef = doc(collection(db, "appointments"));
@@ -154,18 +154,18 @@ export async function blockTimeSlot(prevState: any, formData: FormData) {
             } else if (recurrence === 'weekly') {
                 const targetDayOfWeek = getDay(startDate);
                 while (currentDate <= monthEnd) {
-                     if (getDay(currentDate) === targetDayOfWeek) {
+                    if (getDay(currentDate) === targetDayOfWeek) {
                         const newDocRef = doc(collection(db, "appointments"));
                         batch.set(newDocRef, getBlockedSlotPayload(currentDate));
-                     }
+                    }
                     currentDate = addDays(currentDate, 1);
                 }
             }
         }
-        
+
         await batch.commit();
-        
-        return { 
+
+        return {
             success: true,
             message: `Horario bloqueado con éxito para ${barber.name}.`
         };
@@ -173,9 +173,9 @@ export async function blockTimeSlot(prevState: any, formData: FormData) {
     } catch (error) {
         console.error("Error blocking time slot:", error);
         const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido.";
-        return { 
+        return {
             success: false,
-            message: `Ocurrió un error al procesar la solicitud. ${errorMessage}` 
+            message: `Ocurrió un error al procesar la solicitud. ${errorMessage}`
         };
     }
 }
@@ -186,157 +186,212 @@ const RATE_LIMIT_WINDOW = 60 * 60 * 1000; // 1 hour in milliseconds
 const MAX_REQUESTS_PER_WINDOW = 5; // Allow 5 attempts per hour
 
 function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const requests = ipRequestStore.get(ip) || [];
-  
-  // Filter out requests that are older than the window
-  const recentRequests = requests.filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW);
-  
-  if (recentRequests.length >= MAX_REQUESTS_PER_WINDOW) {
-    return false; // Rate limit exceeded
-  }
+    const now = Date.now();
+    const requests = ipRequestStore.get(ip) || [];
 
-  // Add current request timestamp and update the store
-  recentRequests.push(now);
-  ipRequestStore.set(ip, recentRequests);
+    // Filter out requests that are older than the window
+    const recentRequests = requests.filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW);
 
-  return true; // Request is within limits
+    if (recentRequests.length >= MAX_REQUESTS_PER_WINDOW) {
+        return false; // Rate limit exceeded
+    }
+
+    // Add current request timestamp and update the store
+    recentRequests.push(now);
+    ipRequestStore.set(ip, recentRequests);
+
+    return true; // Request is within limits
 }
 
 export async function bookAppointment(prevState: any, formData: FormData) {
-  const headersList = headers();
-  
-  // Rate Limiting Check
-  const ip = headersList.get('x-forwarded-for') ?? '127.0.0.1';
-  if (!checkRateLimit(ip)) {
-      return {
-          success: false,
-          message: 'Has realizado demasiados intentos de reserva. Por favor, inténtalo de nuevo más tarde.',
-      };
-  }
+    const headersList = await headers();
 
-  const data = {
-    name: formData.get("name"),
-    email: formData.get("email"),
-    phone: formData.get("phone"),
-    service: formData.get("service"),
-    date: formData.get("date"),
-    time: formData.get("time"),
-    barberId: formData.get("barberId"),
-  };
+    // Rate Limiting Check
+    const ip = headersList.get('x-forwarded-for') ?? '127.0.0.1';
+    if (!checkRateLimit(ip)) {
+        return {
+            success: false,
+            message: 'Has realizado demasiados intentos de reserva. Por favor, inténtalo de nuevo más tarde.',
+        };
+    }
 
-  const validatedFields = bookingSchema.safeParse(data);
-
-  if (!validatedFields.success) {
-    return {
-      success: false,
-      message: "Por favor, corrige los errores en el formulario.",
-      errors: validatedFields.error.flatten().fieldErrors,
+    const data = {
+        name: formData.get("name"),
+        email: formData.get("email"),
+        phone: formData.get("phone"),
+        service: formData.get("service"),
+        date: formData.get("date"),
+        time: formData.get("time"),
+        barberId: formData.get("barberId"),
     };
-  }
-  
-  const { name, email: clientEmail, phone, service: serviceIds, date, time, barberId } = validatedFields.data;
-  
-  const newAppointmentRef = doc(collection(db, "appointments"));
 
-  try {
-    await runTransaction(db, async (transaction) => {
-      const team = await getTeam();
-      const barber = team.find(b => b.id === barberId);
-      
-      if (!barber) {
-          throw new Error("El barbero seleccionado no es válido.");
-      }
+    const validatedFields = bookingSchema.safeParse(data);
 
-      const appointmentsQuery = query(
-        collection(db, "appointments"),
-        where("barberId", "==", barberId),
-        where("date", "==", date),
-        where("time", "==", time)
-      );
-      
-      const existingAppointmentsSnapshot = await getDocs(appointmentsQuery);
-      if (!existingAppointmentsSnapshot.empty) {
-        throw new Error("Este horario acaba de ser reservado por otra persona. Por favor, elige otro.");
-      }
+    if (!validatedFields.success) {
+        return {
+            success: false,
+            message: "Por favor, corrige los errores en el formulario.",
+            errors: validatedFields.error.flatten().fieldErrors,
+        };
+    }
 
-      const barberEmail = barber.email || staticBarberEmails[barberId] || null;
+    const { name, email: clientEmail, phone, service: serviceIds, date, time, barberId } = validatedFields.data;
 
-      const appointmentPayload: any = {
-        name,
-        date,
-        barberId,
-        status: 'pending',
-        createdAt: new Date(),
-        type: 'appointment',
-        email: clientEmail,
-        phone: phone,
-        service: serviceIds,
-        barberEmail: barberEmail,
-        time: time,
-      };
+    const newAppointmentRef = doc(collection(db, "appointments"));
 
-      transaction.set(newAppointmentRef, appointmentPayload);
-
-      // Create or update customer profile
-      if (clientEmail) {
-        const customerQuery = query(collection(db, "customers"), where("email", "==", clientEmail));
-        const customerSnapshot = await getDocs(customerQuery);
-        
-        if (customerSnapshot.empty) {
-            // New customer, create a profile
-            const newCustomerRef = doc(collection(db, "customers"));
-            transaction.set(newCustomerRef, {
-                name,
-                email: clientEmail,
-                phone: phone || null,
-                createdAt: new Date(),
-            });
-        } else {
-            // Existing customer, update info if necessary
-            const customerDoc = customerSnapshot.docs[0];
-            const customerData = customerDoc.data();
-            const updates: any = {};
-            if (customerData.name !== name) updates.name = name;
-            if (phone && customerData.phone !== phone) updates.phone = phone;
-            
-            if(Object.keys(updates).length > 0) {
-              transaction.update(customerDoc.ref, updates);
-            }
-        }
-      }
-    });
-    
-    const GMAIL_USER = process.env.GMAIL_USER || 'citasbarbalarga@gmail.com';
-    const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || 'phka jrwd hxaq kryd';
-
-    if (GMAIL_USER && GMAIL_APP_PASSWORD && clientEmail) {
-        try {
+    try {
+        await runTransaction(db, async (transaction) => {
             const team = await getTeam();
             const barber = team.find(b => b.id === barberId);
-            if (!barber) throw new Error("Barber not found for email sending.");
 
-            const transporter = nodemailer.createTransport({
-                service: 'gmail',
-                auth: {
-                    user: GMAIL_USER,
-                    pass: GMAIL_APP_PASSWORD,
-                },
+            if (!barber) {
+                throw new Error("El barbero seleccionado no es válido.");
+            }
+
+            // Calculate duration
+            const serviceIdsArray = serviceIds.split(',');
+            const selectedServices = allServices.filter(s => serviceIdsArray.includes(s.id));
+            const totalDuration = selectedServices.reduce((acc, s) => acc + s.duration, 0);
+
+            // Calculate endTime
+            // time is "08:00 AM" format
+            const startTimeDate = parse(time, "hh:mm a", new Date());
+            // Add duration minutes
+            const endTimeDate = new Date(startTimeDate.getTime() + totalDuration * 60000);
+            const endTime = format(endTimeDate, "hh:mm a");
+
+            const appointmentsQuery = query(
+                collection(db, "appointments"),
+                where("barberId", "==", barberId),
+                where("date", "==", date),
+                // Initial check, but real validation happens below
+                // We need to check if ANY existing appointment overlaps with this new one
+                // Or if this new one overlaps with ANY existing one
+            );
+
+            // Since firestore filtering for overlap is hard with just equality checks, 
+            // we fetch all appointments for that day and barber, then check overlap in memory.
+            // This is safer and prevents overbooking.
+            const dayAppointmentsQuery = query(
+                collection(db, "appointments"),
+                where("barberId", "==", barberId),
+                where("date", "==", date)
+            );
+
+            const existingAppointmentsSnapshot = await getDocs(dayAppointmentsQuery);
+
+            const timeToMinutes = (t: string) => {
+                const d = parse(t, "hh:mm a", new Date());
+                return d.getHours() * 60 + d.getMinutes();
+            }
+
+            const newStart = timeToMinutes(time);
+            const newEnd = timeToMinutes(endTime);
+
+            // Validate that newEnd doesn't exceed 9:00 PM (21:00)
+            // 9:00 PM is 21 * 60 = 1260
+            if (newEnd > 1260) {
+                throw new Error("La cita excede el horario de cierre (9:00 PM). Por favor elige un horario más temprano.");
+            }
+
+            let isOverlapping = false;
+
+            existingAppointmentsSnapshot.docs.forEach(doc => {
+                const apt = doc.data();
+                const aptStart = timeToMinutes(apt.time);
+                let aptEnd = apt.endTime ? timeToMinutes(apt.endTime) : aptStart + 60; // Default to 60 mins if no endTime
+
+                // Standard overlap check: (StartA < EndB) && (EndA > StartB)
+                if (newStart < aptEnd && newEnd > aptStart) {
+                    isOverlapping = true;
+                }
             });
 
-            const serviceIdsArray = serviceIds!.split(',');
-            const chosenServices = allServices.filter(s => serviceIdsArray.includes(s.id));
-            const serviceNames = chosenServices.map(s => s.name).join(', ');
-            const totalPrice = chosenServices.reduce((total, s) => total + parseInt(s.price), 0);
-            const formattedDate = format(parse(date, "yyyy-MM-dd", new Date()), "EEEE, d 'de' LLLL 'de' yyyy", { locale: es });
-            const barbershopAddress = "Calle 22N #6A-30 Ciudad Jardín, Popayán, Cauca, Colombia";
-            const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(barbershopAddress)}`;
-            const whatsappUrl = "https://wa.link/rxl87s";
-            
-            const logoPath = path.join(process.cwd(), 'public', 'multimedia', 'logo-barber.jpg');
-            const logoCid = 'logo-barber';
+            if (isOverlapping) {
+                throw new Error("Este horario o parte de su duración ya está reservado. Por favor, elige otro.");
+            }
 
-          const clientEmailHtml = `
+            const barberEmail = barber.email || staticBarberEmails[barberId] || null;
+
+            const appointmentPayload: any = {
+                name,
+                date,
+                barberId,
+                status: 'pending',
+                createdAt: new Date(),
+                type: 'appointment',
+                email: clientEmail,
+                phone: phone,
+                service: serviceIds,
+                barberEmail: barberEmail,
+                time: time,
+                endTime: endTime, // Save endTime!
+            };
+
+            transaction.set(newAppointmentRef, appointmentPayload);
+
+            // Create or update customer profile
+            if (clientEmail) {
+                const customerQuery = query(collection(db, "customers"), where("email", "==", clientEmail));
+                const customerSnapshot = await getDocs(customerQuery);
+
+                if (customerSnapshot.empty) {
+                    // New customer, create a profile
+                    const newCustomerRef = doc(collection(db, "customers"));
+                    transaction.set(newCustomerRef, {
+                        name,
+                        email: clientEmail,
+                        phone: phone || null,
+                        createdAt: new Date(),
+                    });
+                } else {
+                    // Existing customer, update info if necessary
+                    const customerDoc = customerSnapshot.docs[0];
+                    const customerData = customerDoc.data();
+                    const updates: any = {};
+                    if (customerData.name !== name) updates.name = name;
+                    if (phone && customerData.phone !== phone) updates.phone = phone;
+
+                    if (Object.keys(updates).length > 0) {
+                        transaction.update(customerDoc.ref, updates);
+                    }
+                }
+            }
+        });
+
+        // Email sending logic (omitted for brevity in replacement, but kept in original flow)
+        // Re-adding the email sending logic to ensure it isn't lost
+
+        const GMAIL_USER = process.env.GMAIL_USER || 'citasbarbalarga@gmail.com';
+        const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || 'phka jrwd hxaq kryd';
+
+        if (GMAIL_USER && GMAIL_APP_PASSWORD && clientEmail) {
+            const team = await getTeam();
+            const barber = team.find(b => b.id === barberId);
+            if (!barber) throw new Error("Barber not found for email sending."); // Should be found as we checked before transaction
+
+            try {
+                const transporter = nodemailer.createTransport({
+                    service: 'gmail',
+                    auth: {
+                        user: GMAIL_USER,
+                        pass: GMAIL_APP_PASSWORD,
+                    },
+                });
+
+                const serviceIdsArray = serviceIds!.split(',');
+                const chosenServices = allServices.filter(s => serviceIdsArray.includes(s.id));
+                const serviceNames = chosenServices.map(s => s.name).join(', ');
+                const totalPrice = chosenServices.reduce((total, s) => total + parseInt(s.price), 0);
+                const formattedDate = format(parse(date, "yyyy-MM-dd", new Date()), "EEEE, d 'de' LLLL 'de' yyyy", { locale: es });
+                const barbershopAddress = "Calle 22N #6A-30 Ciudad Jardín, Popayán, Cauca, Colombia";
+                const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(barbershopAddress)}`;
+                const whatsappUrl = "https://wa.link/rxl87s";
+
+                const logoPath = path.join(process.cwd(), 'public', 'multimedia', 'logo-barber.jpg');
+                const logoCid = 'logo-barber';
+
+                const clientEmailHtml = `
             <!DOCTYPE html>
             <html lang="es">
             <head>
@@ -380,6 +435,7 @@ export async function bookAppointment(prevState: any, formData: FormData) {
                                 <li><strong>Barbero:</strong> <span>${barber.name}</span></li>
                                 <li><strong>Fecha:</strong> <span>${formattedDate}</span></li>
                                 <li><strong>Hora:</strong> <span>${time}</span></li>
+                                <li><strong>Duración Estimada:</strong> <span>${totalDuration} min</span></li>
                                 <li><strong>Servicio(s):</strong> <span>${serviceNames}</span></li>
                                 <hr style="border: 1px dashed #444; width: 100%; margin: 10px 0;">
                                 <li><strong>Total Estimado:</strong> <span>$${totalPrice.toLocaleString('es-CO')}</span></li>
@@ -402,22 +458,22 @@ export async function bookAppointment(prevState: any, formData: FormData) {
             </body>
             </html>
             `;
-            
-            await transporter.sendMail({
-                from: `"Barba Larga" <${GMAIL_USER}>`,
-                to: clientEmail,
-                subject: `🚀 Tu Cita en Barba Larga está Confirmada para el ${formattedDate}`,
-                html: clientEmailHtml,
-                attachments: [{
-                    filename: 'logo-barber.jpg',
-                    path: logoPath,
-                    cid: logoCid 
-                }]
-            });
-            
-            const barberEmail = barber.email || staticBarberEmails[barberId] || null;
-            if (barberEmail) {
-                const barberEmailHtml = `
+
+                await transporter.sendMail({
+                    from: `"Barba Larga" <${GMAIL_USER}>`,
+                    to: clientEmail,
+                    subject: `🚀 Tu Cita en Barba Larga está Confirmada para el ${formattedDate}`,
+                    html: clientEmailHtml,
+                    attachments: [{
+                        filename: 'logo-barber.jpg',
+                        path: logoPath,
+                        cid: logoCid
+                    }]
+                });
+
+                const barberEmail = barber.email || staticBarberEmails[barberId] || null;
+                if (barberEmail) {
+                    const barberEmailHtml = `
                     <div style="font-family: Arial, sans-serif; line-height: 1.6;">
                         <h1 style="color: #333;">Nueva Reserva Recibida</h1>
                         <p>Se ha agendado una nueva cita a través de la página web.</p>
@@ -429,52 +485,53 @@ export async function bookAppointment(prevState: any, formData: FormData) {
                             ${phone ? `<li><strong>Teléfono del cliente:</strong> ${phone}</li>` : ''}
                             <li><strong>Fecha:</strong> ${formattedDate}</li>
                             <li><strong>Hora:</strong> ${time}</li>
+                            <li><strong>Duración:</strong> ${totalDuration} min</li>
                             <li><strong>Servicio(s):</strong> ${serviceNames}</li>
                             <li><strong>Total Estimado:</strong> $${totalPrice.toLocaleString('es-CO')}</li>
                         </ul>
                     </div>
                 `;
-                
-                await transporter.sendMail({
-                    from: `"Sistema de Reservas" <${GMAIL_USER}>`,
-                    to: barberEmail,
-                    subject: `¡Nueva Reserva! - ${name} para el ${formattedDate}`,
-                    html: barberEmailHtml,
-                });
-            } else {
-                await updateDoc(newAppointmentRef, {
-                    adminNotes: `Failed to send email notification to barber ${barber.name} (email not found).`
-                });
-            }
 
-        } catch (emailError) {
-            console.error("Error sending email(s) via Nodemailer:", emailError);
-            if (newAppointmentRef.path) {
-                await updateDoc(newAppointmentRef, {
-                    adminNotes: `Failed to send email notification. Error: ${emailError instanceof Error ? emailError.message : String(emailError)}`
-                });
+                    await transporter.sendMail({
+                        from: `"Sistema de Reservas" <${GMAIL_USER}>`,
+                        to: barberEmail,
+                        subject: `¡Nueva Reserva! - ${name} para el ${formattedDate}`,
+                        html: barberEmailHtml,
+                    });
+                } else {
+                    await updateDoc(newAppointmentRef, {
+                        adminNotes: `Failed to send email notification to barber ${barber.name} (email not found).`
+                    });
+                }
+
+            } catch (emailError) {
+                console.error("Error sending email(s) via Nodemailer:", emailError);
+                if (newAppointmentRef.path) {
+                    await updateDoc(newAppointmentRef, {
+                        adminNotes: `Failed to send email notification. Error: ${emailError instanceof Error ? emailError.message : String(emailError)}`
+                    });
+                }
             }
+        } else if (newAppointmentRef.path) {
+            await updateDoc(newAppointmentRef, {
+                adminNotes: `Email notifications not sent because GMAIL_USER or GMAIL_APP_PASSWORD are not set in environment.`
+            });
         }
-    } else if (newAppointmentRef.path){
-        await updateDoc(newAppointmentRef, {
-            adminNotes: `Email notifications not sent because GMAIL_USER or GMAIL_APP_PASSWORD are not set in environment.`
-        });
-    }
 
-    const successMessage = `¡Reserva confirmada! Tu cita para el ${date} a las ${time} ha sido agendada.`;
-      
-    return { 
-        success: true,
-        message: successMessage
-    };
-  } catch (error) {
-    console.error("Error booking appointment:", error);
-    const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido.";
-    return { 
-        success: false,
-        message: `Ocurrió un error al procesar la solicitud. ${errorMessage}` 
-    };
-  }
+        const successMessage = `¡Reserva confirmada! Tu cita para el ${date} a las ${time} ha sido agendada.`;
+
+        return {
+            success: true,
+            message: successMessage
+        };
+    } catch (error) {
+        console.error("Error booking appointment:", error);
+        const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido.";
+        return {
+            success: false,
+            message: `Ocurrió un error al procesar la solicitud. ${errorMessage}`
+        };
+    }
 }
 
 export async function deleteAppointment(appointmentId: string): Promise<{ success: boolean, message: string }> {
@@ -484,7 +541,7 @@ export async function deleteAppointment(appointmentId: string): Promise<{ succes
     try {
         await runTransaction(db, async (transaction) => {
             const appointmentRef = doc(db, "appointments", appointmentId);
-            
+
             // Find and delete the associated transaction if it exists
             const transactionsQuery = query(collection(db, "transactions"), where("appointmentId", "==", appointmentId));
             const transactionsSnapshot = await getDocs(transactionsQuery);
@@ -524,7 +581,7 @@ export async function deleteAllBlockedSlots(barberId: string): Promise<{ success
     }
     try {
         const q = query(
-            collection(db, "appointments"), 
+            collection(db, "appointments"),
             where("type", "==", "blocked"),
             where("barberId", "==", barberId)
         );
@@ -540,7 +597,7 @@ export async function deleteAllBlockedSlots(barberId: string): Promise<{ success
         });
 
         await batch.commit();
-        
+
         return { success: true, message: `${querySnapshot.size} horario(s) bloqueado(s) para este barbero ha(n) sido eliminado(s) con éxito.` };
 
     } catch (error) {
@@ -563,7 +620,7 @@ export async function reactivateAppointment(appointmentId: string): Promise<{ su
             if (!appointmentDoc.exists() || appointmentDoc.data().status !== 'completed') {
                 throw new Error("Solo se pueden reactivar citas completadas.");
             }
-            
+
             // Find and delete the associated transaction
             const transactionsQuery = query(collection(db, "transactions"), where("appointmentId", "==", appointmentId));
             const transactionsSnapshot = await getDocs(transactionsQuery);
@@ -587,62 +644,94 @@ export async function reactivateAppointment(appointmentId: string): Promise<{ su
 }
 
 export async function getAvailableTimesForDate(dateString: string, barberId: string): Promise<string[]> {
-  if (!dateString || !barberId) return [];
+    if (!dateString || !barberId) return [];
 
-  try {
-    const appointmentsCol = collection(db, 'appointments');
-    const q = query(
-      appointmentsCol,
-      where('date', '==', dateString),
-      where('barberId', '==', barberId)
-    );
+    try {
+        const appointmentsCol = collection(db, 'appointments');
+        const q = query(
+            appointmentsCol,
+            where('date', '==', dateString),
+            where('barberId', '==', barberId)
+        );
 
-    const querySnapshot = await getDocs(q);
-    const bookedTimes = new Set<string>();
+        const querySnapshot = await getDocs(q);
+        const bookedTimes = new Set<string>();
 
-    const timeTo24 = (time12h: string): number => {
-        if (!time12h) return -1;
-        const [time, modifier] = time12h.split(' ');
-        let [hours] = time.split(':').map(Number);
-        
-        if (modifier?.toUpperCase() === 'PM' && hours < 12) {
-            hours += 12;
+        const timeTo24 = (time12h: string): number => {
+            if (!time12h) return -1;
+            const [time, modifier] = time12h.split(' ');
+            let [hours] = time.split(':').map(Number);
+
+            if (modifier?.toUpperCase() === 'PM' && hours < 12) {
+                hours += 12;
+            }
+            if (modifier?.toUpperCase() === 'AM' && hours === 12) {
+                hours = 0;
+            }
+            return hours;
+        };
+
+        // Helper to get minutes from 12h time string
+        const timeToMinutes = (time12h: string): number => {
+            const h = timeTo24(time12h);
+            if (h === -1) return -1;
+            // We need minutes too
+            const [time] = time12h.split(' ');
+            const [, minutes] = time.split(':').map(Number);
+            return h * 60 + (minutes || 0);
         }
-        if (modifier?.toUpperCase() === 'AM' && hours === 12) {
-            hours = 0;
-        }
-        return hours;
-    };
 
-    querySnapshot.docs.forEach((docSnap) => {
-      const data = docSnap.data();
-      const startTime24 = timeTo24(data.time);
-      
-      if (data.type === 'blocked' && data.endTime) {
-        const endTime24 = timeTo24(data.endTime);
-        // For a block from 4 PM to 6 PM (16 to 18), we want to book slots 16 and 17.
-        // So we loop from start time up to (but not including) end time.
-        for (let hour = startTime24; hour < endTime24; hour++) {
-          const ampm = hour >= 12 ? 'PM' : 'AM';
-          let h = hour % 12;
-          if (h === 0) h = 12; // For 12 PM or 12 AM
-          const timeString = `${h.toString().padStart(2, '0')}:00 ${ampm}`;
-          bookedTimes.add(timeString.toUpperCase().replace(/\s/g, ''));
-        }
-      } else {
-        // Standard 1-hour appointment
-        if (data.time) {
-          bookedTimes.add(data.time.toUpperCase().replace(/\s/g, ''));
-        }
-      }
-    });
-    
-    return Array.from(bookedTimes);
+        querySnapshot.docs.forEach((docSnap) => {
+            const data = docSnap.data();
 
-  } catch (error) {
-    console.error('Error fetching booked times from Firestore:', error);
-    return [];
-  }
+            // If we have an endTime, we use it to block all overlapped options
+            if (data.time) {
+                const startTimeMinutes = timeToMinutes(data.time);
+                let endTimeMinutes = 0;
+
+                if (data.endTime) {
+                    endTimeMinutes = timeToMinutes(data.endTime);
+                } else {
+                    // Default to 60 mins if no endTime is set (legacy appointments)
+                    endTimeMinutes = startTimeMinutes + 60;
+                }
+
+                // Now, we need to mark as "booked" any standard slot that overlaps with this interval
+                // Standard slots are usually hourly starting at 8:00 AM up to 8:00 PM (starts)
+                // But we don't know the exact slots here, so we just return the full list of "booked" slots 
+                // that fall within this range.
+                // Assuming slots are hourly on the hour:
+
+                // Iterate through every hour from 8 AM to 9 PM and check overlap
+                // Start of day 8:00 AM = 480 mins
+                // End of day 9:00 PM = 1260 mins
+
+                for (let h = 8; h <= 20; h++) {
+                    const slotStartVals = h * 60;
+                    const slotEndVals = (h + 1) * 60; // Assuming 60 min slots for availability checking reference
+
+                    // If the appointment overlaps this slot:
+                    // (StartA < EndB) && (EndA > StartB)
+                    // (AppointmentStart < SlotEnd) && (AppointmentEnd > SlotStart)
+
+                    if (startTimeMinutes < slotEndVals && endTimeMinutes > slotStartVals) {
+                        // This slot is blocked
+                        const ampm = h >= 12 ? 'PM' : 'AM';
+                        let hourDisp = h % 12;
+                        if (hourDisp === 0) hourDisp = 12;
+                        const timeString = `${hourDisp.toString().padStart(2, '0')}:00 ${ampm}`;
+                        bookedTimes.add(timeString.toUpperCase().replace(/\s/g, ''));
+                    }
+                }
+            }
+        });
+
+        return Array.from(bookedTimes);
+
+    } catch (error) {
+        console.error('Error fetching booked times from Firestore:', error);
+        return [];
+    }
 }
 
 export type Appointment = {
@@ -655,7 +744,7 @@ export type Appointment = {
     time: string;
     endTime?: string;
     status: 'pending' | 'completed';
-    createdAt: string; 
+    createdAt: string;
     barberId: string;
     barberEmail?: string | null;
     type: 'appointment' | 'blocked';
@@ -681,11 +770,11 @@ export async function getAllAppointments(): Promise<Appointment[]> {
         const startDateString = format(threeMonthsAgo, "yyyy-MM-dd");
 
         const appointmentsCol = collection(db, "appointments");
-        
+
         const q = query(appointmentsCol, where("date", ">=", startDateString));
-        
+
         const querySnapshot = await getDocs(q);
-        
+
         const appointments = querySnapshot.docs.map(doc => {
             const data = doc.data();
             const createdAtTimestamp = data.createdAt as Timestamp;
@@ -715,7 +804,7 @@ export async function getAllAppointments(): Promise<Appointment[]> {
             if (dateComparison !== 0) {
                 return dateComparison;
             }
-            
+
             const timeA = convertTimeTo24Hour(a.time);
             const timeB = convertTimeTo24Hour(b.time);
             return timeA.localeCompare(timeB);
@@ -745,7 +834,7 @@ export async function confirmAppointmentAsSale(appointmentId: string, paymentMet
             }
 
             const appointmentData = appointmentDoc.data();
-            
+
             if (appointmentData.status === 'completed') {
                 throw new Error("Esta cita ya ha sido marcada como completada.");
             }
@@ -758,7 +847,7 @@ export async function confirmAppointmentAsSale(appointmentId: string, paymentMet
             if (totalAmount <= 0) {
                 throw new Error("El monto del servicio es cero o inválido.");
             }
-            
+
             // 1. Create the transaction document
             const saleData = {
                 type: 'sale',
@@ -786,113 +875,113 @@ export async function confirmAppointmentAsSale(appointmentId: string, paymentMet
 
 
 export async function verifyAdminPassword(password: string): Promise<{ success: boolean, role?: 'admin' | 'barber' }> {
-  const adminPassword = process.env.ADMIN_PASSWORD || 'Ergo-ñia!';
-  const barberPassword = 'barbersclvb69';
+    const adminPassword = process.env.ADMIN_PASSWORD || 'Ergo-ñia!';
+    const barberPassword = 'barbersclvb69';
 
-  if (password === adminPassword) {
-    return { success: true, role: 'admin' };
-  }
-  if (password === barberPassword) {
-    return { success: true, role: 'barber' };
-  }
-  return { success: false };
+    if (password === adminPassword) {
+        return { success: true, role: 'admin' };
+    }
+    if (password === barberPassword) {
+        return { success: true, role: 'barber' };
+    }
+    return { success: false };
 }
 
 
 // --- Cash Flow Actions ---
 
 export type Transaction = {
-  id: string;
-  type: 'sale' | 'expense';
-  amount: number;
-  description: string;
-  paymentMethod: 'cash' | 'card' | 'transfer';
-  date: Date;
-  productId?: string;
-  appointmentId?: string;
+    id: string;
+    type: 'sale' | 'expense';
+    amount: number;
+    description: string;
+    paymentMethod: 'cash' | 'card' | 'transfer';
+    date: Date;
+    productId?: string;
+    appointmentId?: string;
 };
 
 export async function addTransaction(prevState: any, formData: FormData) {
-  const validatedFields = transactionSchema.safeParse({
-    type: formData.get("type"),
-    paymentMethod: formData.get("paymentMethod"),
-    amount: formData.get("amount") ? Number(formData.get("amount")) : undefined,
-    description: formData.get("description") as string || undefined,
-    productId: formData.get("productId") as string || undefined,
-  });
-
-  if (!validatedFields.success) {
-    return {
-      success: false,
-      message: "Datos de formulario inválidos.",
-      errors: validatedFields.error.flatten().fieldErrors,
-    };
-  }
-
-  const { type, paymentMethod, productId, amount, description } = validatedFields.data;
-  
-  if (type === 'sale' && !productId && !description) {
-      return { success: false, message: "Para una venta manual, la descripción es obligatoria."};
-  }
-  if (type === 'expense' && !description) {
-      return { success: false, message: "Para un gasto, la descripción es obligatoria."};
-  }
-  if ((type === 'expense' || (type === 'sale' && !productId)) && (!amount || amount <= 0)) {
-      return { success: false, message: "El monto debe ser un número positivo para registros manuales."};
-  }
-
-
-  try {
-    await runTransaction(db, async (transaction) => {
-        let transactionData: any = {
-            type,
-            paymentMethod,
-            date: new Date(),
-        };
-
-        if (type === 'sale' && productId && productId !== 'manual') {
-            const productRef = doc(db, "products", productId);
-            const productDoc = await transaction.get(productRef);
-
-            if (!productDoc.exists()) {
-                throw new Error("El producto seleccionado no existe.");
-            }
-
-            const productData = productDoc.data();
-            const currentStock = productData.stock;
-            const newStock = currentStock - 1;
-
-            if (newStock < 0) {
-                throw new Error(`No hay suficiente stock para '${productData.name}'.`);
-            }
-            
-            transactionData.amount = productData.sellingPrice;
-            transactionData.description = `Venta de producto: ${productData.name}`;
-            transactionData.productId = productId;
-
-            transaction.update(productRef, { stock: newStock });
-        
-        } else {
-             if (!amount || !description) {
-                throw new Error("Monto y descripción son requeridos para esta transacción.");
-             }
-             transactionData.amount = amount;
-             transactionData.description = description;
-        }
-
-        const transactionRef = doc(collection(db, "transactions"));
-        transaction.set(transactionRef, transactionData);
+    const validatedFields = transactionSchema.safeParse({
+        type: formData.get("type"),
+        paymentMethod: formData.get("paymentMethod"),
+        amount: formData.get("amount") ? Number(formData.get("amount")) : undefined,
+        description: formData.get("description") as string || undefined,
+        productId: formData.get("productId") as string || undefined,
     });
-    
-    return { success: true, message: `Transacción de '${type}' registrada con éxito.` };
-  } catch (error) {
-    console.error("Error adding transaction:", error);
-    const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido.";
-    return { 
-        success: false,
-        message: `Error al registrar la transacción: ${errorMessage}` 
-    };
-  }
+
+    if (!validatedFields.success) {
+        return {
+            success: false,
+            message: "Datos de formulario inválidos.",
+            errors: validatedFields.error.flatten().fieldErrors,
+        };
+    }
+
+    const { type, paymentMethod, productId, amount, description } = validatedFields.data;
+
+    if (type === 'sale' && !productId && !description) {
+        return { success: false, message: "Para una venta manual, la descripción es obligatoria." };
+    }
+    if (type === 'expense' && !description) {
+        return { success: false, message: "Para un gasto, la descripción es obligatoria." };
+    }
+    if ((type === 'expense' || (type === 'sale' && !productId)) && (!amount || amount <= 0)) {
+        return { success: false, message: "El monto debe ser un número positivo para registros manuales." };
+    }
+
+
+    try {
+        await runTransaction(db, async (transaction) => {
+            let transactionData: any = {
+                type,
+                paymentMethod,
+                date: new Date(),
+            };
+
+            if (type === 'sale' && productId && productId !== 'manual') {
+                const productRef = doc(db, "products", productId);
+                const productDoc = await transaction.get(productRef);
+
+                if (!productDoc.exists()) {
+                    throw new Error("El producto seleccionado no existe.");
+                }
+
+                const productData = productDoc.data();
+                const currentStock = productData.stock;
+                const newStock = currentStock - 1;
+
+                if (newStock < 0) {
+                    throw new Error(`No hay suficiente stock para '${productData.name}'.`);
+                }
+
+                transactionData.amount = productData.sellingPrice;
+                transactionData.description = `Venta de producto: ${productData.name}`;
+                transactionData.productId = productId;
+
+                transaction.update(productRef, { stock: newStock });
+
+            } else {
+                if (!amount || !description) {
+                    throw new Error("Monto y descripción son requeridos para esta transacción.");
+                }
+                transactionData.amount = amount;
+                transactionData.description = description;
+            }
+
+            const transactionRef = doc(collection(db, "transactions"));
+            transaction.set(transactionRef, transactionData);
+        });
+
+        return { success: true, message: `Transacción de '${type}' registrada con éxito.` };
+    } catch (error) {
+        console.error("Error adding transaction:", error);
+        const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido.";
+        return {
+            success: false,
+            message: `Error al registrar la transacción: ${errorMessage}`
+        };
+    }
 }
 
 export async function deleteTransaction(transactionId: string): Promise<{ success: boolean, message: string }> {
@@ -933,7 +1022,7 @@ export async function deleteTransaction(transactionId: string): Promise<{ succes
                     console.warn(`Attempted to revert status for appointment ${transactionData.appointmentId} which no longer exists or wasn't completed.`);
                 }
             }
-            
+
             firestoreTransaction.delete(transactionRef);
         });
 
@@ -951,9 +1040,9 @@ export async function getRecentTransactions(): Promise<Transaction[]> {
     try {
         const transactionsCol = collection(db, "transactions");
         const q = query(transactionsCol, orderBy("date", "desc"), limit(50));
-        
+
         const querySnapshot = await getDocs(q);
-        
+
         const transactions = querySnapshot.docs.map(doc => {
             const data = doc.data();
             return {
@@ -994,7 +1083,7 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
         revenueByMethod: [],
         chartData: [],
     };
-    
+
     try {
         const today = new Date();
         const thirtyDaysAgo = startOfDay(subDays(today, 29));
@@ -1002,7 +1091,7 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
         const transactionsCol = collection(db, "transactions");
         const q = query(transactionsCol, where("date", ">=", thirtyDaysAgo));
         const querySnapshot = await getDocs(q);
-        
+
         const transactions: Transaction[] = querySnapshot.docs.map(doc => {
             const data = doc.data();
             return {
@@ -1015,7 +1104,7 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
         const todayStats = { revenue: 0, salesCount: 0 };
         const thisWeekStats = { revenue: 0, salesCount: 0 };
         const thisMonthStats = { revenue: 0, salesCount: 0 };
-        
+
         let last30DaysRevenue = 0;
         let last30DaysExpenses = 0;
 
@@ -1024,7 +1113,7 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
 
         for (let i = 0; i < 30; i++) {
             const date = subDays(today, i);
-            const formattedDate = format(date, "d MMM", {locale: es});
+            const formattedDate = format(date, "d MMM", { locale: es });
             dailyData[formattedDate] = { revenue: 0, expenses: 0 };
         }
 
@@ -1047,7 +1136,7 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
                     thisMonthStats.salesCount += 1;
                 }
             }
-            
+
             if (tx.type === 'sale') {
                 last30DaysRevenue += tx.amount;
                 revenueByMethod[tx.paymentMethod] = (revenueByMethod[tx.paymentMethod] || 0) + tx.amount;
@@ -1055,7 +1144,7 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
                 last30DaysExpenses += tx.amount;
             }
 
-            const formattedDate = format(tx.date, "d MMM", {locale: es});
+            const formattedDate = format(tx.date, "d MMM", { locale: es });
             if (dailyData[formattedDate]) {
                 if (tx.type === 'sale') {
                     dailyData[formattedDate].revenue += tx.amount;
@@ -1064,13 +1153,13 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
                 }
             }
         });
-        
+
         const chartData = Object.keys(dailyData).map(date => ({
             date,
             revenue: dailyData[date].revenue,
             expenses: dailyData[date].expenses,
         })).reverse();
-        
+
         return {
             todayStats,
             thisWeekStats,
@@ -1094,12 +1183,12 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
 // --- Inventory Actions ---
 
 export type Product = {
-  id: string;
-  name: string;
-  description?: string;
-  sellingPrice: number;
-  stock: number;
-  createdAt: Date;
+    id: string;
+    name: string;
+    description?: string;
+    sellingPrice: number;
+    stock: number;
+    createdAt: Date;
 };
 
 const createSlug = (name: string) => {
@@ -1114,83 +1203,83 @@ const createSlug = (name: string) => {
 
 
 export async function addProduct(prevState: any, formData: FormData) {
-  const validatedFields = productSchema.safeParse({
-    name: formData.get("name"),
-    description: formData.get("description"),
-    sellingPrice: formData.get("sellingPrice"),
-    stock: formData.get("stock"),
-  });
+    const validatedFields = productSchema.safeParse({
+        name: formData.get("name"),
+        description: formData.get("description"),
+        sellingPrice: formData.get("sellingPrice"),
+        stock: formData.get("stock"),
+    });
 
-  if (!validatedFields.success) {
-    return {
-      success: false,
-      message: "Por favor, corrige los errores en el formulario.",
-      errors: validatedFields.error.flatten().fieldErrors,
-    };
-  }
-
-  try {
-    const { name, ...rest } = validatedFields.data;
-    const productId = createSlug(name);
-    
-    const productRef = doc(db, "products", productId);
-    const productDoc = await getDoc(productRef);
-
-    if (productDoc.exists()) {
+    if (!validatedFields.success) {
         return {
             success: false,
-            message: `Un producto con el nombre '${name}' ya existe. Por favor, elige un nombre diferente.`
+            message: "Por favor, corrige los errores en el formulario.",
+            errors: validatedFields.error.flatten().fieldErrors,
         };
     }
 
-    const productData = {
-        name,
-        ...rest,
-        createdAt: new Date(),
-    };
-    
-    await setDoc(productRef, productData);
-    
-    return { success: true, message: `Producto '${name}' añadido con éxito.` };
-  } catch (error) {
-    console.error("Error adding product:", error);
-    return { 
-        success: false,
-        message: "Ocurrió un error al añadir el producto." 
-    };
-  }
+    try {
+        const { name, ...rest } = validatedFields.data;
+        const productId = createSlug(name);
+
+        const productRef = doc(db, "products", productId);
+        const productDoc = await getDoc(productRef);
+
+        if (productDoc.exists()) {
+            return {
+                success: false,
+                message: `Un producto con el nombre '${name}' ya existe. Por favor, elige un nombre diferente.`
+            };
+        }
+
+        const productData = {
+            name,
+            ...rest,
+            createdAt: new Date(),
+        };
+
+        await setDoc(productRef, productData);
+
+        return { success: true, message: `Producto '${name}' añadido con éxito.` };
+    } catch (error) {
+        console.error("Error adding product:", error);
+        return {
+            success: false,
+            message: "Ocurrió un error al añadir el producto."
+        };
+    }
 }
 
 export async function updateProduct(prevState: any, formData: FormData) {
-  const validatedFields = productSchema.safeParse({
-    id: formData.get("id"),
-    name: formData.get("name"),
-    description: formData.get("description"),
-    sellingPrice: formData.get("sellingPrice"),
-    stock: formData.get("stock"),
-  });
+    const validatedFields = productSchema.safeParse({
+        id: formData.get("id"),
+        name: formData.get("name"),
+        description: formData.get("description"),
+        sellingPrice: formData.get("sellingPrice"),
+        stock: formData.get("stock"),
+    });
 
-  if (!validatedFields.success) {
-    return {
-      success: false,
-      message: "Por favor, corrige los errores.",
-      errors: validatedFields.error.flatten().fieldErrors,
-    };
-  }
-  const { id, ...productData } = validatedFields.data;
+    if (!validatedFields.success) {
+        return {
+            success: false,
+            message: "Por favor, corrige los errores.",
+            errors: validatedFields.error.flatten().fieldErrors,
+        };
+    }
+    const { id, ...productData } = validatedFields.data;
 
-  if (!id) {
-    return { success: false, message: "ID del producto no encontrado." };
-  }
+    if (!id) {
+        return { success: false, message: "ID del producto no encontrado." };
+    }
 
-  try {
-    const productRef = doc(db, "products", id);
-    await updateDoc(productRef, productData);
-    return { success: true, message: "Producto actualizado con éxito." };
-  } catch (error) {
-    console.error("Error updating product:", error);
-    return { success: false, message: "No se pudo actualizar el producto." };
-  }
+    try {
+        const productRef = doc(db, "products", id);
+        await updateDoc(productRef, productData);
+        return { success: true, message: "Producto actualizado con éxito." };
+    } catch (error) {
+        console.error("Error updating product:", error);
+        return { success: false, message: "No se pudo actualizar el producto." };
+    }
 }
 
 export async function deleteProduct(productId: string): Promise<{ success: boolean, message: string }> {
@@ -1211,9 +1300,9 @@ export async function getProducts(): Promise<Product[]> {
     try {
         const productsCol = collection(db, "products");
         const q = query(productsCol, orderBy("createdAt", "desc"));
-        
+
         const querySnapshot = await getDocs(q);
-        
+
         const products = querySnapshot.docs.map(doc => {
             const data = doc.data();
             return {
@@ -1241,16 +1330,16 @@ type CustomerAppointment = Omit<Appointment, 'id' | 'barberEmail' | 'createdAt'>
 };
 
 export type CustomerAnalytics = {
-  id: string; // email
-  name: string;
-  email: string;
-  phone?: string;
-  totalVisits: number;
-  lastVisitDate: Date | null;
-  lastVisitTime: string | null;
-  status: 'new' | 'stable' | 'irregular' | 'at_risk';
-  totalSpent: number;
-  appointments: CustomerAppointment[];
+    id: string; // email
+    name: string;
+    email: string;
+    phone?: string;
+    totalVisits: number;
+    lastVisitDate: Date | null;
+    lastVisitTime: string | null;
+    status: 'new' | 'stable' | 'irregular' | 'at_risk';
+    totalSpent: number;
+    appointments: CustomerAppointment[];
 };
 
 const getServiceCost = (serviceIds: string): { names: string, price: number } => {
@@ -1262,47 +1351,47 @@ const getServiceCost = (serviceIds: string): { names: string, price: number } =>
 };
 
 export async function addCustomer(prevState: any, formData: FormData) {
-  const validatedFields = customerSchema.safeParse({
-    name: formData.get("name"),
-    email: formData.get("email"),
-    phone: formData.get("phone"),
-  });
+    const validatedFields = customerSchema.safeParse({
+        name: formData.get("name"),
+        email: formData.get("email"),
+        phone: formData.get("phone"),
+    });
 
-  if (!validatedFields.success) {
-    return {
-      success: false,
-      message: "Por favor, corrige los errores en el formulario.",
-      errors: validatedFields.error.flatten().fieldErrors,
-    };
-  }
-
-  try {
-    const { name, email, phone } = validatedFields.data;
-    
-    const customerQuery = query(collection(db, "customers"), where("email", "==", email));
-    const querySnapshot = await getDocs(customerQuery);
-    
-    if (!querySnapshot.empty) {
-      return { success: false, message: `El cliente con el email '${email}' ya existe.` };
+    if (!validatedFields.success) {
+        return {
+            success: false,
+            message: "Por favor, corrige los errores en el formulario.",
+            errors: validatedFields.error.flatten().fieldErrors,
+        };
     }
 
-    const customerData = {
-      name,
-      email,
-      phone: phone || null,
-      createdAt: new Date(),
-    };
-    
-    await addDoc(collection(db, "customers"), customerData);
-    
-    return { success: true, message: `Cliente '${name}' añadido con éxito.` };
-  } catch (error) {
-    console.error("Error adding customer:", error);
-    return { 
-        success: false,
-        message: "Ocurrió un error al añadir el cliente." 
-    };
-  }
+    try {
+        const { name, email, phone } = validatedFields.data;
+
+        const customerQuery = query(collection(db, "customers"), where("email", "==", email));
+        const querySnapshot = await getDocs(customerQuery);
+
+        if (!querySnapshot.empty) {
+            return { success: false, message: `El cliente con el email '${email}' ya existe.` };
+        }
+
+        const customerData = {
+            name,
+            email,
+            phone: phone || null,
+            createdAt: new Date(),
+        };
+
+        await addDoc(collection(db, "customers"), customerData);
+
+        return { success: true, message: `Cliente '${name}' añadido con éxito.` };
+    } catch (error) {
+        console.error("Error adding customer:", error);
+        return {
+            success: false,
+            message: "Ocurrió un error al añadir el cliente."
+        };
+    }
 }
 
 export async function deleteCustomers(customerEmails: string[]): Promise<{ success: boolean, message: string }> {
@@ -1312,7 +1401,7 @@ export async function deleteCustomers(customerEmails: string[]): Promise<{ succe
 
     try {
         const batch = writeBatch(db);
-        
+
         const q = query(collection(db, "customers"), where("email", "in", customerEmails));
         const querySnapshot = await getDocs(q);
 
@@ -1339,21 +1428,21 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
     try {
         const appointmentsCol = collection(db, "appointments");
         const customersCol = collection(db, "customers");
-        
+
         const appointmentsQuery = query(appointmentsCol, orderBy("date", "desc"));
         const manualCustomersQuery = query(customersCol);
 
         const [appointmentsSnapshot, manualCustomersSnapshot] = await Promise.all([
-          getDocs(appointmentsQuery),
-          getDocs(manualCustomersQuery)
+            getDocs(appointmentsQuery),
+            getDocs(manualCustomersQuery)
         ]);
 
         if (appointmentsSnapshot.empty && manualCustomersSnapshot.empty) {
             return [];
         }
-        
-        type CustomerData = { 
-            name: string; 
+
+        type CustomerData = {
+            name: string;
             email: string;
             phone?: string;
             appointments: CustomerAppointment[];
@@ -1366,33 +1455,33 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
             const data = doc.data();
             const email = data.email.toLowerCase();
             if (!customersData[email]) {
-                customersData[email] = { 
-                  name: data.name, 
-                  email: data.email, 
-                  phone: data.phone,
-                  appointments: [],
+                customersData[email] = {
+                    name: data.name,
+                    email: data.email,
+                    phone: data.phone,
+                    appointments: [],
                 };
             }
         });
-        
+
         // Process customers from appointments
         appointmentsSnapshot.docs.forEach(doc => {
             const data = doc.data();
             if (data.type === 'appointment' && data.email) {
                 const email = data.email.toLowerCase();
                 if (!customersData[email]) {
-                    customersData[email] = { 
-                      name: data.name, 
-                      email: data.email, 
-                      phone: data.phone,
-                      appointments: [],
+                    customersData[email] = {
+                        name: data.name,
+                        email: data.email,
+                        phone: data.phone,
+                        appointments: [],
                     };
                 } else {
                     // Update name and phone from most recent appointment if it's different
                     customersData[email].name = data.name;
                     customersData[email].phone = data.phone || customersData[email].phone;
                 }
-                
+
                 const { names, price } = getServiceCost(data.service);
                 const createdAtTimestamp = data.createdAt as Timestamp;
 
@@ -1424,20 +1513,20 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
                 const dateB = parseISO(`${b.date}T${convertTimeTo24Hour(b.time)}`);
                 return compareAsc(dateB, dateA);
             });
-            
+
             const completedAppointments = sortedAppointments.filter(app => app.status === 'completed');
 
             const totalVisits = completedAppointments.length;
             const totalSpent = completedAppointments.reduce((acc, app) => acc + (app.cost || 0), 0);
-            
+
             let lastVisitDate: Date | null = null;
             let lastVisitTime: string | null = null;
-            
+
             if (completedAppointments.length > 0) {
-              lastVisitDate = parseISO(completedAppointments[0].date);
-              lastVisitTime = completedAppointments[0].time;
+                lastVisitDate = parseISO(completedAppointments[0].date);
+                lastVisitTime = completedAppointments[0].time;
             }
-            
+
             const daysSinceLastVisit = lastVisitDate ? differenceInDays(today, lastVisitDate) : Infinity;
 
             let status: CustomerAnalytics['status'] = 'new';
@@ -1464,7 +1553,7 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
                 appointments: sortedAppointments,
             });
         }
-        
+
         analytics.sort((a, b) => {
             const lastVisitA = a.appointments[0]?.date ? parseISO(a.appointments[0].date) : null;
             const lastVisitB = b.appointments[0]?.date ? parseISO(b.appointments[0].date) : null;
@@ -1485,13 +1574,13 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
 
 // --- Team Management Actions ---
 export type TeamMember = {
-  id: string;
-  name: string;
-  email: string | null;
-  role: string;
-  description: string;
-  imageUrl: string;
-  isAvailable: boolean;
+    id: string;
+    name: string;
+    email: string | null;
+    role: string;
+    description: string;
+    imageUrl: string;
+    isAvailable: boolean;
 };
 
 const createTeamMemberId = (name: string) => {
@@ -1505,57 +1594,57 @@ const createTeamMemberId = (name: string) => {
 };
 
 const newTeamMemberSchema = z.object({
-  name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
-  email: z.string().email({ message: "Por favor, introduce un correo electrónico válido." }).nullable().optional(),
-  role: z.string().min(3, { message: "El rol es requerido." }),
-  description: z.string().min(10, { message: "La descripción debe tener al menos 10 caracteres." }),
-  imageUrl: z.string().min(1, { message: "Por favor, introduce una ruta de imagen válida." }),
-  isAvailable: z.boolean().default(true),
+    name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
+    email: z.string().email({ message: "Por favor, introduce un correo electrónico válido." }).nullable().optional(),
+    role: z.string().min(3, { message: "El rol es requerido." }),
+    description: z.string().min(10, { message: "La descripción debe tener al menos 10 caracteres." }),
+    imageUrl: z.string().min(1, { message: "Por favor, introduce una ruta de imagen válida." }),
+    isAvailable: z.boolean().default(true),
 });
 
 export async function addTeamMember(prevState: any, formData: FormData) {
-  const validatedFields = newTeamMemberSchema.safeParse({
-    name: formData.get("name"),
-    email: formData.get("email") || null,
-    role: formData.get("role"),
-    description: formData.get("description"),
-    imageUrl: formData.get("imageUrl"),
-    isAvailable: formData.get("isAvailable") === 'on',
-  });
-  
-  if (!validatedFields.success) {
-    return {
-      success: false,
-      message: "Por favor, corrige los errores.",
-      errors: validatedFields.error.flatten().fieldErrors,
-    };
-  }
+    const validatedFields = newTeamMemberSchema.safeParse({
+        name: formData.get("name"),
+        email: formData.get("email") || null,
+        role: formData.get("role"),
+        description: formData.get("description"),
+        imageUrl: formData.get("imageUrl"),
+        isAvailable: formData.get("isAvailable") === 'on',
+    });
 
-  const { name, ...memberData } = validatedFields.data;
-  const memberId = createTeamMemberId(name);
-
-  try {
-    const memberRef = doc(db, "team", memberId);
-    const docSnap = await getDoc(memberRef);
-    if(docSnap.exists()){
-      return { success: false, message: `Un colaborador con el nombre '${name}' ya existe.` };
+    if (!validatedFields.success) {
+        return {
+            success: false,
+            message: "Por favor, corrige los errores.",
+            errors: validatedFields.error.flatten().fieldErrors,
+        };
     }
-    await setDoc(memberRef, { name, ...memberData });
-    return { success: true, message: `Colaborador '${name}' añadido con éxito.` };
-  } catch (error) {
-    console.error("Error adding team member:", error);
-    return { success: false, message: "No se pudo añadir el colaborador." };
-  }
+
+    const { name, ...memberData } = validatedFields.data;
+    const memberId = createTeamMemberId(name);
+
+    try {
+        const memberRef = doc(db, "team", memberId);
+        const docSnap = await getDoc(memberRef);
+        if (docSnap.exists()) {
+            return { success: false, message: `Un colaborador con el nombre '${name}' ya existe.` };
+        }
+        await setDoc(memberRef, { name, ...memberData });
+        return { success: true, message: `Colaborador '${name}' añadido con éxito.` };
+    } catch (error) {
+        console.error("Error adding team member:", error);
+        return { success: false, message: "No se pudo añadir el colaborador." };
+    }
 }
 
 const teamMemberSchema = z.object({
-  id: z.string(),
-  name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
-  email: z.string().email({ message: "Email inválido." }).nullable().optional().or(z.literal("")),
-  description: z.string().min(10, { message: "La descripción debe tener al menos 10 caracteres." }),
-  imageUrl: z.string().url({ message: "Por favor, introduce una URL de imagen válida." }),
-  isAvailable: z.boolean().default(true),
-  role: z.string(),
+    id: z.string(),
+    name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
+    email: z.string().email({ message: "Email inválido." }).nullable().optional().or(z.literal("")),
+    description: z.string().min(10, { message: "La descripción debe tener al menos 10 caracteres." }),
+    imageUrl: z.string().url({ message: "Por favor, introduce una URL de imagen válida." }),
+    isAvailable: z.boolean().default(true),
+    role: z.string(),
 });
 
 const initialTeamData = [
@@ -1619,7 +1708,7 @@ export async function getTeam(): Promise<TeamMember[]> {
                 batch.set(memberRef, member);
             });
             await batch.commit();
-            
+
             const seededSnapshot = await getDocs(query(teamCol));
             return seededSnapshot.docs.map(docSnap => ({
                 id: docSnap.id,
@@ -1627,7 +1716,7 @@ export async function getTeam(): Promise<TeamMember[]> {
                 email: docSnap.data().email || null,
             } as TeamMember));
         }
-        
+
         const team = querySnapshot.docs.map(doc => {
             const data = doc.data();
             return {
@@ -1650,47 +1739,47 @@ export async function getTeam(): Promise<TeamMember[]> {
 
 
 export async function updateTeamMember(prevState: any, formData: FormData) {
-  const dataToValidate = {
-    id: formData.get("id"),
-    name: formData.get("name"),
-    email: formData.get("email"),
-    description: formData.get("description"),
-    imageUrl: formData.get("imageUrl"),
-    isAvailable: formData.get("isAvailable") === 'on',
-    role: formData.get("role"),
-  };
-
-  const validatedFields = teamMemberSchema.safeParse(dataToValidate);
-
-  if (!validatedFields.success) {
-    return {
-      success: false,
-      message: "Por favor, corrige los errores.",
-      errors: validatedFields.error.flatten().fieldErrors,
+    const dataToValidate = {
+        id: formData.get("id"),
+        name: formData.get("name"),
+        email: formData.get("email"),
+        description: formData.get("description"),
+        imageUrl: formData.get("imageUrl"),
+        isAvailable: formData.get("isAvailable") === 'on',
+        role: formData.get("role"),
     };
-  }
-  
-  const { id, ...memberData } = validatedFields.data;
 
-  if (!id) {
-    return { success: false, message: "ID del miembro del equipo no encontrado." };
-  }
+    const validatedFields = teamMemberSchema.safeParse(dataToValidate);
 
-  try {
-    const memberRef = doc(db, "team", id);
-    await updateDoc(memberRef, {
-        name: memberData.name,
-        email: memberData.email || null,
-        description: memberData.description,
-        imageUrl: memberData.imageUrl,
-        isAvailable: memberData.isAvailable,
-        role: memberData.role,
-    });
-    return { success: true, message: "Colaborador actualizado con éxito." };
-  } catch (error) {
-    console.error("Error updating team member:", error);
-    return { success: false, message: "No se pudo actualizar el colaborador." };
-  }
+    if (!validatedFields.success) {
+        return {
+            success: false,
+            message: "Por favor, corrige los errores.",
+            errors: validatedFields.error.flatten().fieldErrors,
+        };
+    }
+
+    const { id, ...memberData } = validatedFields.data;
+
+    if (!id) {
+        return { success: false, message: "ID del miembro del equipo no encontrado." };
+    }
+
+    try {
+        const memberRef = doc(db, "team", id);
+        await updateDoc(memberRef, {
+            name: memberData.name,
+            email: memberData.email || null,
+            description: memberData.description,
+            imageUrl: memberData.imageUrl,
+            isAvailable: memberData.isAvailable,
+            role: memberData.role,
+        });
+        return { success: true, message: "Colaborador actualizado con éxito." };
+    } catch (error) {
+        console.error("Error updating team member:", error);
+        return { success: false, message: "No se pudo actualizar el colaborador." };
+    }
 }
 
 export async function toggleTeamMemberAvailability(id: string, isAvailable: boolean): Promise<{ success: boolean, message: string }> {
@@ -1723,7 +1812,7 @@ export async function deleteTeamMember(memberId: string): Promise<{ success: boo
         return { success: false, message: "No se pudo eliminar el colaborador." };
     }
 }
-    
+
 
 // --- Notification Actions ---
 
@@ -1736,16 +1825,16 @@ export type Notification = {
 
 const initialNotifications = [
     {
-      title: "¡Bienvenido a Barba Larga!",
-      description: "Tu estilo, nuestra pasión. Agenda tu cita y vive la experiencia."
+        title: "¡Bienvenido a Barba Larga!",
+        description: "Tu estilo, nuestra pasión. Agenda tu cita y vive la experiencia."
     },
     {
-      title: "Servicio Premium",
-      description: "Prueba La Experiencia Alfa. El ritual definitivo para el hombre que lo quiere todo."
+        title: "Servicio Premium",
+        description: "Prueba La Experiencia Alfa. El ritual definitivo para el hombre que lo quiere todo."
     },
     {
-      title: "Asesor de Estilo IA",
-      description: "¿No sabes qué hacerte? Deja que nuestra IA te recomiende el look perfecto."
+        title: "Asesor de Estilo IA",
+        description: "¿No sabes qué hacerte? Deja que nuestra IA te recomiende el look perfecto."
     }
 ];
 
@@ -1763,7 +1852,7 @@ export async function getNotifications(): Promise<Omit<Notification, 'createdAt'
                 batch.set(docRef, { ...notif, createdAt: new Date() });
             });
             await batch.commit();
-            
+
             // Re-fetch after seeding
             const seededSnapshot = await getDocs(q);
             return seededSnapshot.docs.map(doc => ({
@@ -1786,31 +1875,31 @@ export async function getNotifications(): Promise<Omit<Notification, 'createdAt'
 }
 
 export async function addNotification(prevState: any, formData: FormData) {
-  const validatedFields = notificationSchema.safeParse({
-    title: formData.get("title"),
-    description: formData.get("description"),
-  });
-
-  if (!validatedFields.success) {
-    return {
-      success: false,
-      message: "Por favor, corrige los errores en el formulario.",
-      errors: validatedFields.error.flatten().fieldErrors,
-    };
-  }
-
-  try {
-    const { title, description } = validatedFields.data;
-    await addDoc(collection(db, "notifications"), {
-        title,
-        description,
-        createdAt: new Date(),
+    const validatedFields = notificationSchema.safeParse({
+        title: formData.get("title"),
+        description: formData.get("description"),
     });
-    return { success: true, message: "Notificación añadida con éxito." };
-  } catch (error) {
-    console.error("Error adding notification:", error);
-    return { success: false, message: "Ocurrió un error al añadir la notificación." };
-  }
+
+    if (!validatedFields.success) {
+        return {
+            success: false,
+            message: "Por favor, corrige los errores en el formulario.",
+            errors: validatedFields.error.flatten().fieldErrors,
+        };
+    }
+
+    try {
+        const { title, description } = validatedFields.data;
+        await addDoc(collection(db, "notifications"), {
+            title,
+            description,
+            createdAt: new Date(),
+        });
+        return { success: true, message: "Notificación añadida con éxito." };
+    } catch (error) {
+        console.error("Error adding notification:", error);
+        return { success: false, message: "Ocurrió un error al añadir la notificación." };
+    }
 }
 
 export async function updateNotification(prevState: any, formData: FormData) {
@@ -1822,9 +1911,9 @@ export async function updateNotification(prevState: any, formData: FormData) {
 
     if (!validatedFields.success) {
         return {
-          success: false,
-          message: "Por favor, corrige los errores.",
-          errors: validatedFields.error.flatten().fieldErrors,
+            success: false,
+            message: "Por favor, corrige los errores.",
+            errors: validatedFields.error.flatten().fieldErrors,
         };
     }
     const { id, ...notificationData } = validatedFields.data;
@@ -1858,16 +1947,16 @@ export async function deleteNotification(notificationId: string): Promise<{ succ
         return { success: false, message: "Ocurrió un error al eliminar la notificación." };
     }
 }
-    
-    
 
-    
 
-    
-    
-    
 
-    
+
+
+
+
+
+
+
 
 
 

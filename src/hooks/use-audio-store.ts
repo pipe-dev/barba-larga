@@ -10,7 +10,7 @@ type AudioState = {
 const useAudioStore = create<AudioState>((set) => ({
   isInteracted: false,
   setInteracted: () => set({ isInteracted: true }),
-  welcomeModalDismissed: typeof window !== 'undefined' ? !!localStorage.getItem('welcomeModalDismissed') : false,
+  welcomeModalDismissed: false,
   setWelcomeModalDismissed: () => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('welcomeModalDismissed', 'true');

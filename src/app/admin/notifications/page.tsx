@@ -18,24 +18,24 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-  DialogClose
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+    DialogFooter,
+    DialogClose
 } from "@/components/ui/dialog";
 
 const notificationFormSchema = z.object({
@@ -45,9 +45,9 @@ const notificationFormSchema = z.object({
 });
 
 type NotificationFormData = z.infer<typeof notificationFormSchema>;
-const initialNotificationFormState = { message: null, errors: {}, success: false };
+const initialNotificationFormState = { message: "", errors: {}, success: false };
 
-function EditNotificationForm({ notification, onFormSubmit, onOpenChange }: { notification: NotificationType, onFormSubmit: () => void, onOpenChange: (open:boolean) => void }) {
+function EditNotificationForm({ notification, onFormSubmit, onOpenChange }: { notification: NotificationType, onFormSubmit: () => void, onOpenChange: (open: boolean) => void }) {
     const [state, formAction] = useActionState(updateNotification, initialNotificationFormState);
     const { toast } = useToast();
 
@@ -68,18 +68,18 @@ function EditNotificationForm({ notification, onFormSubmit, onOpenChange }: { no
 
     return (
         <Form {...form}>
-        <form
-            action={formAction}
-            className="space-y-6"
-        >
-            <input type="hidden" name="id" value={form.getValues("id")} />
-            <FormField control={form.control} name="title" render={({ field }) => ( <FormItem> <FormLabel>Título</FormLabel> <FormControl><Input {...field} name="title"/></FormControl> <FormMessage /> </FormItem> )} />
-            <FormField control={form.control} name="description" render={({ field }) => ( <FormItem> <FormLabel>Descripción</FormLabel> <FormControl><Textarea {...field} name="description"/></FormControl> <FormMessage /> </FormItem> )} />
-            <DialogFooter>
-                <DialogClose asChild><Button type="button" variant="secondary">Cancelar</Button></DialogClose>
-                <Button type="submit">Guardar Cambios</Button>
-            </DialogFooter>
-        </form>
+            <form
+                action={formAction}
+                className="space-y-6"
+            >
+                <input type="hidden" name="id" value={form.getValues("id")} />
+                <FormField control={form.control} name="title" render={({ field }) => (<FormItem> <FormLabel>Título</FormLabel> <FormControl><Input {...field} name="title" /></FormControl> <FormMessage /> </FormItem>)} />
+                <FormField control={form.control} name="description" render={({ field }) => (<FormItem> <FormLabel>Descripción</FormLabel> <FormControl><Textarea {...field} name="description" /></FormControl> <FormMessage /> </FormItem>)} />
+                <DialogFooter>
+                    <DialogClose asChild><Button type="button" variant="secondary">Cancelar</Button></DialogClose>
+                    <Button type="submit">Guardar Cambios</Button>
+                </DialogFooter>
+            </form>
         </Form>
     )
 }
@@ -133,8 +133,8 @@ export default function NotificationsPage() {
     }, [addState, toast, addForm, fetchData]);
 
     const handleDeleteNotification = async (id: string) => {
-        const {success, message} = await deleteNotification(id);
-        if(success) {
+        const { success, message } = await deleteNotification(id);
+        if (success) {
             toast({ title: "Éxito", description: message });
             fetchData();
         } else {
@@ -143,7 +143,7 @@ export default function NotificationsPage() {
     };
 
     const handleSetDialogOpen = (notificationId: string, open: boolean) => {
-      setOpenDialogs(prev => ({...prev, [notificationId]: open}));
+        setOpenDialogs(prev => ({ ...prev, [notificationId]: open }));
     };
 
     if (isLoading) {
@@ -153,7 +153,7 @@ export default function NotificationsPage() {
             </div>
         );
     }
-    
+
     return (
         <div className="container mx-auto p-4 md:p-8">
             <div className="mb-6 flex items-center justify-between">
@@ -180,10 +180,10 @@ export default function NotificationsPage() {
                         <DialogHeader>
                             <DialogTitle>Añadir Nueva Notificación</DialogTitle>
                         </DialogHeader>
-                         <Form {...addForm}>
+                        <Form {...addForm}>
                             <form ref={addFormRef} action={addFormAction} className="space-y-6">
-                                <FormField control={addForm.control} name="title" render={({ field }) => ( <FormItem> <FormLabel>Título</FormLabel> <FormControl><Input placeholder="Ej: ¡Nuevo Servicio!" {...field} name="title"/></FormControl> <FormMessage /> </FormItem> )}/>
-                                <FormField control={addForm.control} name="description" render={({ field }) => ( <FormItem> <FormLabel>Descripción</FormLabel> <FormControl><Textarea placeholder="Ej: Ahora ofrecemos Keratina..." {...field} name="description"/></FormControl> <FormMessage /> </FormItem> )}/>
+                                <FormField control={addForm.control} name="title" render={({ field }) => (<FormItem> <FormLabel>Título</FormLabel> <FormControl><Input placeholder="Ej: ¡Nuevo Servicio!" {...field} name="title" /></FormControl> <FormMessage /> </FormItem>)} />
+                                <FormField control={addForm.control} name="description" render={({ field }) => (<FormItem> <FormLabel>Descripción</FormLabel> <FormControl><Textarea placeholder="Ej: Ahora ofrecemos Keratina..." {...field} name="description" /></FormControl> <FormMessage /> </FormItem>)} />
                                 <DialogFooter>
                                     <DialogClose asChild><Button type="button" variant="secondary">Cancelar</Button></DialogClose>
                                     <Button type="submit">Añadir Notificación</Button>
@@ -193,7 +193,7 @@ export default function NotificationsPage() {
                     </DialogContent>
                 </Dialog>
             </div>
-            
+
             <Card>
                 <CardHeader>
                     <CardTitle>Notificaciones Actuales</CardTitle>
@@ -201,55 +201,55 @@ export default function NotificationsPage() {
                 </CardHeader>
                 <CardContent>
                     {notifications.length > 0 ? (
-                    <div className="space-y-4">
-                        {notifications.map((notif) => (
-                            <Card key={notif.id} className="flex items-center justify-between p-4">
-                                <div className="flex items-center gap-4">
-                                    <Bell className="h-5 w-5 text-primary"/>
-                                    <div>
-                                        <p className="font-semibold">{notif.title}</p>
-                                        <p className="text-sm text-muted-foreground">{notif.description}</p>
+                        <div className="space-y-4">
+                            {notifications.map((notif) => (
+                                <Card key={notif.id} className="flex items-center justify-between p-4">
+                                    <div className="flex items-center gap-4">
+                                        <Bell className="h-5 w-5 text-primary" />
+                                        <div>
+                                            <p className="font-semibold">{notif.title}</p>
+                                            <p className="text-sm text-muted-foreground">{notif.description}</p>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="flex items-center">
-                                    <Dialog open={openDialogs[notif.id] || false} onOpenChange={(open) => handleSetDialogOpen(notif.id, open)}>
-                                        <DialogTrigger asChild>
-                                            <Button variant="ghost" size="icon"><Pencil className="h-4 w-4" /></Button>
-                                        </DialogTrigger>
-                                        <DialogContent>
-                                            <DialogHeader>
-                                                <DialogTitle>Editar Notificación</DialogTitle>
-                                            </DialogHeader>
-                                            <EditNotificationForm 
-                                                notification={notif} 
-                                                onFormSubmit={fetchData}
-                                                onOpenChange={(open) => handleSetDialogOpen(notif.id, open)}
-                                            />
-                                        </DialogContent>
-                                    </Dialog>
-                                    <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                            <Button variant="ghost" size="icon"><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent>
-                                            <AlertDialogHeader>
-                                                <AlertDialogTitle>¿Eliminar esta notificación?</AlertDialogTitle>
-                                                <AlertDialogDescription>Esta acción no se puede deshacer.</AlertDialogDescription>
-                                            </AlertDialogHeader>
-                                            <AlertDialogFooter>
-                                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                                <AlertDialogAction onClick={() => handleDeleteNotification(notif.id)}>Sí, eliminar</AlertDialogAction>
-                                            </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                    </AlertDialog>
-                                </div>
-                            </Card>
-                        ))}
-                    </div>
+                                    <div className="flex items-center">
+                                        <Dialog open={openDialogs[notif.id] || false} onOpenChange={(open) => handleSetDialogOpen(notif.id, open)}>
+                                            <DialogTrigger asChild>
+                                                <Button variant="ghost" size="icon"><Pencil className="h-4 w-4" /></Button>
+                                            </DialogTrigger>
+                                            <DialogContent>
+                                                <DialogHeader>
+                                                    <DialogTitle>Editar Notificación</DialogTitle>
+                                                </DialogHeader>
+                                                <EditNotificationForm
+                                                    notification={notif}
+                                                    onFormSubmit={fetchData}
+                                                    onOpenChange={(open) => handleSetDialogOpen(notif.id, open)}
+                                                />
+                                            </DialogContent>
+                                        </Dialog>
+                                        <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                                <Button variant="ghost" size="icon"><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent>
+                                                <AlertDialogHeader>
+                                                    <AlertDialogTitle>¿Eliminar esta notificación?</AlertDialogTitle>
+                                                    <AlertDialogDescription>Esta acción no se puede deshacer.</AlertDialogDescription>
+                                                </AlertDialogHeader>
+                                                <AlertDialogFooter>
+                                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                                    <AlertDialogAction onClick={() => handleDeleteNotification(notif.id)}>Sí, eliminar</AlertDialogAction>
+                                                </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
+                                    </div>
+                                </Card>
+                            ))}
+                        </div>
                     ) : (
-                    <div className="flex h-48 items-center justify-center rounded-md border-2 border-dashed">
-                        <p className="text-muted-foreground">No hay notificaciones.</p>
-                    </div>
+                        <div className="flex h-48 items-center justify-center rounded-md border-2 border-dashed">
+                            <p className="text-muted-foreground">No hay notificaciones.</p>
+                        </div>
                     )}
                 </CardContent>
             </Card>
@@ -257,4 +257,3 @@ export default function NotificationsPage() {
     );
 }
 
-    

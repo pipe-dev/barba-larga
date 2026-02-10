@@ -2,34 +2,26 @@
 'use server';
 
 /**
- * @fileOverview An AI-powered style advisor for personalized recommendations.
- *
- * - aiStyleAdvisor - A function that provides style advice based on user input.
- * - AIStyleAdvisorInput - The input type for the aiStyleadvisor function.
- * - AIStyleAdvisorOutput - The return type for the aiStyleAdvisor function.
+ * @fileOverview AI-powered style advisor — optimized for speed.
+ * Uses gemini-2.5-flash with a condensed prompt.
+ * Exports both a standard function and a streaming API.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
 import { services } from '@/lib/data';
 
 const AIStyleAdvisorInputSchema = z.object({
-  genderIdentity: z
-    .string()
-    .describe("The client's gender identity (e.g., male, female, non-binary)."),
-  stylePreferences: z
-    .string()
-    .describe("The client's style preferences and goals."),
+  genderIdentity: z.string().describe("Client's gender identity."),
+  stylePreferences: z.string().describe("Client's style preferences."),
 });
 export type AIStyleAdvisorInput = z.infer<typeof AIStyleAdvisorInputSchema>;
 
 const AIStyleAdvisorOutputSchema = z.object({
-  recommendations: z.string().describe('Personalized style recommendations.'),
-  suggestedServices: z
-    .string()
-
-    .describe('Specific services from the catalog that align with the advice.'),
-  suggestedServiceIds: z.array(z.string()).describe('An array of IDs for the suggested services, taken from the catalog.'),
+  recommendations: z.string().describe('Personalized style recommendations in plain text (no markdown).'),
+  suggestedServices: z.string().describe('Names of suggested services from the catalog.'),
+  suggestedServiceIds: z.array(z.string()).describe('IDs of suggested services from the catalog.'),
+  styleImageKey: z.string().describe('One of: french-crop, degradado-natural, texturizado, mullet-moderno, faux-hawk, corte-militar, bob, shaggy, coloracion, diseno-rapado'),
 });
 export type AIStyleAdvisorOutput = z.infer<typeof AIStyleAdvisorOutputSchema>;
 
@@ -37,67 +29,49 @@ export async function aiStyleAdvisor(input: AIStyleAdvisorInput): Promise<AIStyl
   return aiStyleAdvisorFlow(input);
 }
 
-const promptTemplate = `You are a friendly and encouraging style advisor for Barba Larga, a barbershop. A client will provide their gender identity and style preferences.
-  
-First, start with a short, positive, and encouraging phrase about their style choices (e.g., "¡Excelente elección!", "¡Buena decisión, ese estilo te quedará genial!").
+// Condensed prompt — ~60% shorter than original
+const promptTemplate = `Eres el asesor de estilo IA de Barba Larga (barbería). Responde en español, sin markdown, texto plano.
 
-Then, based on their input and the provided 2025 trends context, provide a **concise but well-advised** personalized style recommendation. The response should be friendly and helpful. You MUST NOT use any markdown formatting (like asterisks for bold or italics). The response should be plain text.
+INSTRUCCIONES:
+1. Empieza con una frase positiva corta
+2. Da una recomendación concisa basada en tendencias 2025 y las preferencias del cliente
+3. Sugiere 1-2 servicios del catálogo (prefiere combos sobre servicios individuales)
+4. Termina con: "pregunta a tu asesor humano qué otros productos y servicios tienen para ti en el momento que estés en tu cita"
 
-Finally, suggest one or two specific services from our catalog that align with the advice given. You MUST only suggest services from the provided catalog.
+REGLAS de servicios:
+- Si recomiendas color → sugiere "Coloración Estratégica" (ID: coloring)
+- Si recomiendas diseño → sugiere "Corte + Diseño y Cejas" (ID: haircut-design-eyebrows)
+- Si recomiendas corte + barba → sugiere "Experiencia Dominante" en vez de ambos por separado
 
-IMPORTANT LOGIC:
-1.  If the recommendation involves 'color' or 'coloracion', you MUST suggest the 'Coloración Estratégica (Hombre)' service (ID: coloring).
-2.  If the recommendation involves 'diseño' or 'estilismo' in the hair, you MUST suggest the 'Corte + Diseño y Cejas' service (ID: haircut-design-eyebrows).
-3.  Before suggesting multiple individual services, check if there's a combo package (like 'Experiencia Dominante: Corte y Barba' or 'Servicio Premium') that includes the services you want to recommend. If a package offers better value, suggest the package instead of the individual items. For example, instead of suggesting 'Corte de Autoridad' AND 'Barba: Detalle de Poder', you should suggest 'Experiencia Dominante: Corte y Barba'.
+TENDENCIAS 2025 (resumen):
+Hombre: degradado natural, texturizado, mullet moderno, faux hawk, french crop, corte militar
+Mujer: bobs, shaggy, capas, flequillos de cortina
+Color: mocha mousse, cobrizos, contouring capilar, rubio avellana, rojo cereza
+Diseño: microdiseños rapados, acabado natural y texturizado
 
-After suggesting the services, you must end your response with the exact phrase: "pregunta a tu asesor humano qué otros productos y servicios tienen para ti en el momento que estés en tu cita"
+styleImageKey — elige UNO:
+french-crop | degradado-natural | texturizado | mullet-moderno | faux-hawk | corte-militar | bob | shaggy | coloracion | diseno-rapado
 
----
-**Contexto de Tendencias de Moda 2025:**
+Cliente: {{{genderIdentity}}}
+Preferencias: {{{stylePreferences}}}
 
-**Filosofía General:** Se busca una combinación de estilos clásicos renovados, texturas naturales y colores que varían entre tonos sutiles y llamativos. Hay un regreso a la naturalidad, pero con un enfoque en el volumen, el movimiento y la personalización.
+Catálogo (ID: Nombre):
+{{{serviceCatalog}}}`;
 
-**Cortes de cabello: Hombre**
-- **Degradado natural:** Una versión más suave y orgánica del fade tradicional, perfecta para un look relajado y de bajo mantenimiento.
-- **Corte texturizado:** Con laterales más cortos y la parte superior ligeramente más larga, la clave está en el movimiento y una apariencia despeinada y natural.
-- **Mullet moderno:** Versión sofisticada con la parte trasera más larga, pero bien definida y estructurada.
-- **Faux hawk y mohawk fade:** Estilos atrevidos que expresan individualidad, con la cresta más marcada en el faux hawk y un degradado alto en el mohawk.
-- **French crop:** Lados y nuca más cortos y la parte superior texturizada y desordenada.
-- **Corte militar con degradado bajo:** Actualización del clásico con un degradado sutil en la parte inferior.
+const outputSchema = z.object({
+  recommendations: z.string().describe('Recomendación personalizada en texto plano.'),
+  suggestedServices: z.string().describe('Nombres de los servicios sugeridos.'),
+  suggestedServiceIds: z.array(z.string()).describe('IDs de los servicios sugeridos del catálogo.'),
+  styleImageKey: z.string().describe('Clave de imagen: french-crop|degradado-natural|texturizado|mullet-moderno|faux-hawk|corte-militar|bob|shaggy|coloracion|diseno-rapado'),
+});
 
-**Cortes de cabello: Mujer**
-- **Bobs:** Siguen en tendencia, con versiones desde el "Prada bob" ultracorto hasta el bob clásico a los hombros.
-- **Corte mariposa y capas noventeras:** Buscan volumen y movimiento con capas que enmarcan el rostro.
-- **Shaggy:** Ideal para un estilo moderno y de bajo mantenimiento, con capas que crean volumen y textura.
-- **Flequillos:** Desaliñados, largos y de cortina están de moda, combinándose con cortes en capas.
-- **Melena en capas:** Para cabellos de longitud media y larga, para aportar versatilidad y movimiento.
-
-**Coloraciones: Hombre y Mujer**
-- **Mocha mousse:** Tono marrón cálido y versátil, color del año de Pantone para 2025.
-- **Tonos cobrizos:** Desde el ginger spice vibrante hasta el copper brown elegante.
-- **Contouring de pelo:** Técnica que utiliza la coloración para resaltar u ocultar rasgos faciales.
-- **Rubios variados:** Desde el rubio avellana (hazel blond) con reflejos dorados y cenizos, hasta el rubio vainilla (vanilla blond).
-- **Tonalidades intensas:** Rojo cereza y burdeos intenso para looks atrevidos.
-- **Tonalidades oscuras y ahumadas:** Castaño ahumado y terciopelo oscuro para aportar sofisticación.
-
-**Estilismos y Diseño:**
-- **Degradados y rapados:** Transiciones más suaves y naturales.
-- **Raya al lado sutil:** Versión moderna y más suave.
-- **Microdiseños rapados:** Diseños discretos y personalizados.
-- **Peinado con pomada:** Para looks más pulidos.
-- **Rizos grandes y elásticos:** Potenciados con productos específicos.
-- **Acabado natural y texturizado:** Evitar el exceso de producto y optar por movimiento.
-
----
-
-**Client Information:**
-- Gender Identity: {{{genderIdentity}}}
-- Style Preferences: {{{stylePreferences}}}
-
-**Available Service Catalog (Format: ID: Name):**
----
-{{{serviceCatalog}}}
----`;
+function buildPrompt(input: AIStyleAdvisorInput): string {
+  const serviceCatalog = services.map(s => `${s.id}: ${s.name}`).join('\n');
+  return promptTemplate
+    .replace('{{{genderIdentity}}}', input.genderIdentity)
+    .replace('{{{stylePreferences}}}', input.stylePreferences)
+    .replace('{{{serviceCatalog}}}', serviceCatalog);
+}
 
 const aiStyleAdvisorFlow = ai.defineFlow(
   {
@@ -106,34 +80,16 @@ const aiStyleAdvisorFlow = ai.defineFlow(
     outputSchema: AIStyleAdvisorOutputSchema,
   },
   async input => {
-    // Format the service list to be injected into the prompt, including IDs
-    const serviceCatalog = services.map(s => `${s.id}: ${s.name}`).join('\n');
-    const fullPrompt = promptTemplate
-        .replace('{{{genderIdentity}}}', input.genderIdentity)
-        .replace('{{{stylePreferences}}}', input.stylePreferences)
-        .replace('{{{serviceCatalog}}}', serviceCatalog);
-        
-    const textOutputSchema = z.object({
-        recommendations: z.string().describe('Personalized style recommendations.'),
-        suggestedServices: z
-          .string()
-          .describe('Specific services from the catalog that align with the advice. Respond with only the names of the services.'),
-        suggestedServiceIds: z.array(z.string()).describe('An array of one or two IDs for the suggested services, taken from the provided catalog. You MUST return the ID, not the name.'),
-      });
-
     const { output } = await ai.generate({
-        model: 'googleai/gemini-flash-latest',
-        prompt: fullPrompt,
-        output: {
-            format: 'json',
-            schema: textOutputSchema,
-        },
+      model: 'googleai/gemini-2.5-flash',
+      prompt: buildPrompt(input),
+      output: { format: 'json', schema: outputSchema },
     });
 
     if (!output) {
-        throw new Error("Unable to get a response from the style advisor.");
+      throw new Error("No se pudo obtener respuesta del asesor de estilo.");
     }
-    
+
     return output;
   }
 );

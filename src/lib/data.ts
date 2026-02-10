@@ -3,15 +3,15 @@ import type { LucideIcon } from "lucide-react";
 import { Scissors, Droplets, Paintbrush, Sparkles, User, PencilRuler, Gem } from "lucide-react";
 
 export interface Service {
-    id: string;
-    name: string;
-    description: string;
-    price: string;
-    duration: number; // Duration in minutes
-    icon: LucideIcon | 'BeardIcon';
-    mediaUrl: string;
-    mediaType: 'image' | 'video';
-    imageHint: string;
+  id: string;
+  name: string;
+  description: string;
+  price: string;
+  duration: number; // Duration in minutes
+  icon: LucideIcon | 'BeardIcon';
+  mediaUrl: string;
+  mediaType: 'image' | 'video';
+  imageHint: string;
 }
 
 export const services: Service[] = [
@@ -88,7 +88,7 @@ export const services: Service[] = [
     price: "4000",
     duration: 20,
     icon: PencilRuler,
-    mediaUrl: "/multimedia/eyebrow.jpg",
+    mediaUrl: "/multimedia/haircut-eyebrows.png",
     mediaType: 'image',
     imageHint: "eyebrow shaping"
   }
@@ -102,36 +102,24 @@ export const getBaseAvailableTimes = (date: Date): { morning: string[], afternoo
     return { morning: [], afternoon: [], night: [] };
   }
 
-  // Base times are consistent for all working days
-  const morningTimes = ["10:00 AM", "11:00 AM"];
-  const afternoonTimes = ["02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"];
-  
-  let nightTimes: string[] = [];
-
-  // Monday (1) to Thursday (4)
-  if (day >= 1 && day <= 4) {
-    nightTimes = ["06:00 PM", "07:00 PM"];
-  }
-  
-  // Friday (5) and Saturday (6)
-  if (day === 5 || day === 6) {
-    nightTimes = ["06:00 PM", "07:00 PM", "08:00 PM"];
-  }
+  // Uniform schedule: 8:00 AM - 9:00 PM every day (Mon-Sat)
+  // Admin controls availability via time blocking
+  const morningTimes = ["08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM"];
+  const afternoonTimes = ["12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"];
+  const nightTimes = ["06:00 PM", "07:00 PM", "08:00 PM"];
 
   return { morning: morningTimes, afternoon: afternoonTimes, night: nightTimes };
 };
 
 export const getEndTimeOptions = (date: Date): string[] => {
-    const day = date.getDay(); // Sunday: 0, Monday: 1, ..., Saturday: 6
-    const { morning, afternoon, night } = getBaseAvailableTimes(date);
-    const allTimes = [...morning, ...afternoon, ...night];
-    
-    // Add an extra hour at the end for blocking
-    if (day >= 1 && day <= 4) { // Weekdays
-        allTimes.push("08:00 PM");
-    } else if (day === 5 || day === 6) { // Weekends
-        allTimes.push("09:00 PM");
-    }
-    
-    return allTimes;
+  const { morning, afternoon, night } = getBaseAvailableTimes(date);
+  const allTimes = [...morning, ...afternoon, ...night];
+
+  // Add 9:00 PM as the final end-time option for blocking
+  if (allTimes.length > 0) {
+    allTimes.push("09:00 PM");
+  }
+
+  return allTimes;
 };
+
