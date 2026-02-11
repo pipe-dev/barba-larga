@@ -179,6 +179,9 @@ export default function NotificationsPage() {
                     <DialogContent>
                         <DialogHeader>
                             <DialogTitle>Añadir Nueva Notificación</DialogTitle>
+                            <DialogDescription>
+                                Crea un nuevo anuncio para mostrar en la página principal.
+                            </DialogDescription>
                         </DialogHeader>
                         <Form {...addForm}>
                             <form ref={addFormRef} action={addFormAction} className="space-y-6">
@@ -219,6 +222,9 @@ export default function NotificationsPage() {
                                             <DialogContent>
                                                 <DialogHeader>
                                                     <DialogTitle>Editar Notificación</DialogTitle>
+                                                    <DialogDescription>
+                                                        Modifica los detalles del anuncio existente.
+                                                    </DialogDescription>
                                                 </DialogHeader>
                                                 <EditNotificationForm
                                                     notification={notif}

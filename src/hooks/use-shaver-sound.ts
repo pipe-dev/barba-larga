@@ -10,7 +10,7 @@ export function useShaverSound() {
 
   useEffect(() => {
     // Initialize the Audio object only on the client side
-    const audio = new Audio('/multimedia/shaver.mp3');
+    const audio = new Audio('/multimedia/shaver.mp3?v=1');
     audio.preload = 'auto';
     audioRef.current = audio;
 
@@ -25,15 +25,16 @@ export function useShaverSound() {
 
   const playSound = useCallback(() => {
     if (audioRef.current) {
-        // Stop any previous playback and play from the start
-        audioRef.current.currentTime = 0;
-        audioRef.current.play().catch(error => {
-            console.error("Error playing shaver sound:", error);
-        });
+      // Stop any previous playback and play from the start
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(error => {
+        if (error.name !== 'AbortError') {
+          console.error("Error playing shaver sound:", error);
+        }
+      });
     }
   }, []);
 
   return playSound;
 }
 
-    

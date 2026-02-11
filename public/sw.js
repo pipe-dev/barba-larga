@@ -11,8 +11,18 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   // Perform activate steps
   console.log('Service Worker: Activating...');
-  // Take control of all pages under this service worker's scope immediately.
-  event.waitUntil(self.clients.claim());
+
+  // Clean up old caches from previous service workers (e.g. next-pwa)
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          console.log('Deleting old cache:', cacheName);
+          return caches.delete(cacheName);
+        })
+      );
+    }).then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener('fetch', (event) => {

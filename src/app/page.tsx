@@ -204,7 +204,9 @@ export default function HomePage() {
     setIsLoaded(true);
     if (videoRef.current) {
       videoRef.current.play().catch(error => {
-        console.error("Error al intentar reproducir el video:", error);
+        if (error.name !== 'AbortError') {
+          console.error("Error al intentar reproducir el video:", error);
+        }
       });
     }
 
