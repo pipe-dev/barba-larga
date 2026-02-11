@@ -38,8 +38,21 @@ Preferencias: {{{stylePreferences}}}
 Catálogo (ID: Nombre):
 {{{serviceCatalog}}}`;
 
+
+export const maxDuration = 60; // Allow up to 60 seconds for AI generation
+
 export async function POST(req: NextRequest) {
     try {
+        // Shim: Allow GEMINI_API_KEY to work for Genkit if GOOGLE_GENAI_API_KEY is missing
+        if (!process.env.GOOGLE_GENAI_API_KEY && process.env.GEMINI_API_KEY) {
+            process.env.GOOGLE_GENAI_API_KEY = process.env.GEMINI_API_KEY;
+        }
+
+        // Debug: Check if API key is present (don't log the key itself)
+        if (!process.env.GOOGLE_GENAI_API_KEY) {
+            console.error("❌ GOOGLE_GENAI_API_KEY is missing in environment variables! (Checked GEMINI_API_KEY too)");
+        }
+
         const { genderIdentity, stylePreferences } = await req.json();
 
         if (!genderIdentity || !stylePreferences) {
@@ -55,7 +68,9 @@ export async function POST(req: NextRequest) {
             .replace('{{{stylePreferences}}}', stylePreferences)
             .replace('{{{serviceCatalog}}}', serviceCatalog);
 
-        const { stream, response } = ai.generateStream({
+        console.log("🚀 Starting AI Style Advisor generation...");
+
+        const { stream, response } = await ai.generateStream({
             model: 'googleai/gemini-2.5-flash',
             prompt: fullPrompt,
             output: { format: 'json', schema: outputSchema },
@@ -81,11 +96,14 @@ export async function POST(req: NextRequest) {
                     const output = finalResponse.output;
 
                     if (output) {
+                        console.log("✅ AI generation completed successfully.");
                         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, result: output })}\n\n`));
                     } else {
+                        console.error("❌ AI generation finished but returned no output.");
                         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, error: 'No output from AI' })}\n\n`));
                     }
                 } catch (err) {
+                    console.error("❌ Error during stream processing:", err);
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, error: String(err) })}\n\n`));
                 } finally {
                     controller.close();
@@ -101,6 +119,7 @@ export async function POST(req: NextRequest) {
             },
         });
     } catch (err) {
+        console.error("❌ Fatal error in style-advisor API:", err);
         return new Response(JSON.stringify({ error: String(err) }), {
             status: 500,
             headers: { 'Content-Type': 'application/json' },

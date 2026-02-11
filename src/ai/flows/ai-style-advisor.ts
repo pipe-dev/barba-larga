@@ -80,16 +80,34 @@ const aiStyleAdvisorFlow = ai.defineFlow(
     outputSchema: AIStyleAdvisorOutputSchema,
   },
   async input => {
-    const { output } = await ai.generate({
-      model: 'googleai/gemini-2.5-flash',
-      prompt: buildPrompt(input),
-      output: { format: 'json', schema: outputSchema },
-    });
-
-    if (!output) {
-      throw new Error("No se pudo obtener respuesta del asesor de estilo.");
+    // Shim: Allow GEMINI_API_KEY to work for Genkit if GOOGLE_GENAI_API_KEY is missing
+    if (!process.env.GOOGLE_GENAI_API_KEY && process.env.GEMINI_API_KEY) {
+      process.env.GOOGLE_GENAI_API_KEY = process.env.GEMINI_API_KEY;
     }
 
-    return output;
+    try {
+      const { output } = await ai.generate({
+        model: 'googleai/gemini-2.5-flash',
+        prompt: buildPrompt(input),
+        output: { format: 'json', schema: outputSchema },
+      });
+
+      if (!output) {
+        console.error("❌ AI Style Advisor (Server Action) returned no output.");
+        throw new Error("No se pudo obtener respuesta del asesor de estilo.");
+      }
+
+      return output;
+    } catch (error) {
+      console.error("❌ Error in AI Style Advisor (Server Action):", error);
+      throw error;
+    }
+  }
+
+    if (!output) {
+  throw new Error("No se pudo obtener respuesta del asesor de estilo.");
+}
+
+return output;
   }
 );
