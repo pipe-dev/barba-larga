@@ -16,7 +16,7 @@ const BarberPoleIcon = () => (
     strokeWidth="1.5"
     strokeLinecap="round"
     strokeLinejoin="round"
-    className="animate-spin-slow"
+    className="text-primary"
   >
     <path d="M4 2v20" />
     <path d="M20 2v20" />
@@ -67,19 +67,6 @@ export function WelcomeModal() {
           Entrar
         </Button>
       </div>
-      <style>{`
-        @keyframes spin-slow {
-            from {
-                transform: rotate(0deg);
-            }
-            to {
-                transform: rotate(360deg);
-            }
-        }
-        .animate-spin-slow {
-            animation: spin-slow 10s linear infinite;
-        }
-    `}</style>
     </div>
   );
 }

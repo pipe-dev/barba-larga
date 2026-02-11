@@ -6,11 +6,10 @@ import * as React from 'react';
 import { useActionState } from 'react';
 import { getNotifications, getAllAppointments, verifyAdminPassword, deleteAppointment, confirmAppointmentAsSale, getTeam, reactivateAppointment, bookAppointment, deleteBlockedSlot, deleteAllBlockedSlots, blockTimeSlot, getAvailableTimesForDate, addNotification, updateNotification, deleteNotification } from '@/app/actions';
 import type { Appointment, TeamMember, Notification as NotificationType } from '@/app/actions';
-import { services as allServices, Service, getBaseAvailableTimes, getEndTimeOptions } from '@/lib/data';
+import { services as allServices, Service, getBaseAvailableTimes, getEndTimeOptions, getServiceDetails } from '@/lib/data';
 import { format, parseISO, parse } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { DndProvider } from 'react-dnd';
-import { HTML5Backend } from 'react-dnd-html5-backend';
+
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -71,6 +70,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from '@/lib/utils';
 import { InstallPwaButton } from '@/components/install-pwa-button';
 import { AppointmentCalendar } from '@/components/admin/appointment-calendar';
+import { ConfirmSaleDialog } from '@/components/admin/confirm-sale-dialog';
 import { ServicesManagerDialog } from '@/components/admin/services-manager';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -125,20 +125,6 @@ function downloadCSV(data: any[], filename: string) {
 }
 
 
-
-const getServiceDetails = (ids: string) => {
-    if (!ids) return { names: 'Servicio Desconocido', totalPrice: 0 };
-    const serviceIds = ids.split(',');
-    const chosenServices = allServices.filter(s => serviceIds.includes(s.id.trim()));
-
-    const names = chosenServices.map(s => s.name).join(', ');
-    const totalPrice = chosenServices.reduce((total, s) => {
-        const price = parseInt(s.price.replace(/\D/g, ''), 10) || 0;
-        return total + price;
-    }, 0);
-
-    return { names, totalPrice };
-};
 
 function AdminLoginPage({ onLoginSuccess }: { onLoginSuccess: (role: 'admin' | 'barber') => void }) {
     const [password, setPassword] = React.useState('');
@@ -195,99 +181,7 @@ function AdminLoginPage({ onLoginSuccess }: { onLoginSuccess: (role: 'admin' | '
     );
 }
 
-function ConfirmSaleDialog({ appointment, onSaleConfirmed, onAppointmentDeleted, onOpenChange }: { appointment: Appointment, onSaleConfirmed: () => void, onAppointmentDeleted: () => void, onOpenChange: (open: boolean) => void }) {
-    const [paymentMethod, setPaymentMethod] = React.useState<'cash' | 'card' | 'transfer'>('cash');
-    const [isSubmitting, setIsSubmitting] = React.useState(false);
-    const { toast } = useToast();
 
-    if (!appointment) return null;
-
-    const { names: serviceNames, totalPrice } = getServiceDetails(appointment.service);
-
-    const handleConfirmSale = async () => {
-        setIsSubmitting(true);
-        const { success, message } = await confirmAppointmentAsSale(appointment.id, paymentMethod);
-        if (success) {
-            toast({ title: "Éxito", description: message });
-            onSaleConfirmed();
-            onOpenChange(false);
-        } else {
-            toast({ title: "Error", description: message, variant: "destructive" });
-        }
-        setIsSubmitting(false);
-    };
-
-    const handleDelete = async () => {
-        const { success, message } = await deleteAppointment(appointment.id);
-        if (success) {
-            toast({ title: "Éxito", description: message });
-            onAppointmentDeleted();
-            onOpenChange(false);
-        } else {
-            toast({ title: "Error", description: message, variant: "destructive" });
-        }
-    }
-
-    return (
-        <DialogContent>
-            <DialogHeader>
-                <DialogTitle>Confirmar Venta de la Cita</DialogTitle>
-                <DialogDescription>
-                    Esto registrará la venta en el sistema de caja y marcará la cita como completada.
-                </DialogDescription>
-            </DialogHeader>
-            <div className="py-4 space-y-4">
-                <div>
-                    <p className="font-medium">{appointment.name}</p>
-                    <p className="text-sm text-muted-foreground">{serviceNames}</p>
-                </div>
-                <div className="bg-muted p-3 rounded-md text-center">
-                    <p className="text-sm text-muted-foreground">Total a Pagar</p>
-                    <p className="text-2xl font-bold text-primary">${totalPrice.toLocaleString('es-CO')}</p>
-                </div>
-                <Select onValueChange={(value: 'cash' | 'card' | 'transfer') => setPaymentMethod(value)} defaultValue={paymentMethod}>
-                    <SelectTrigger>
-                        <SelectValue placeholder="Selecciona un método de pago" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="cash">Efectivo</SelectItem>
-                        <SelectItem value="card">Tarjeta</SelectItem>
-                        <SelectItem value="transfer">Transferencia</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
-            <DialogFooter className="sm:justify-between flex-col-reverse sm:flex-row gap-2">
-                <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                        <Button variant="destructive">
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Eliminar Cita
-                        </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                        <AlertDialogHeader>
-                            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                                Esta acción cancelará la cita permanentemente. No se puede deshacer.
-                            </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction onClick={handleDelete}>Sí, eliminar</AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
-                <div className="flex gap-2">
-                    <DialogClose asChild><Button type="button" variant="secondary">Cancelar</Button></DialogClose>
-                    <Button onClick={handleConfirmSale} disabled={isSubmitting} className="bg-green-600 hover:bg-green-700 text-white">
-                        {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
-                        Confirmar Venta
-                    </Button>
-                </div>
-            </DialogFooter>
-        </DialogContent>
-    );
-}
 
 type SlotSelectionInfo = {
     start: Date;
@@ -989,6 +883,7 @@ function AppointmentsDashboard({
             await updateDoc(doc(db, "appointments", appointment.id), {
                 date: appointment.date,
                 time: appointment.time,
+                endTime: appointment.endTime,
                 barberId: appointment.barberId
             });
             toast({ title: "Éxito", description: "Cita actualizada al arrastrar y soltar." });
@@ -1155,17 +1050,15 @@ function AppointmentsDashboard({
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <DndProvider backend={HTML5Backend}>
-                                <div style={{ height: '80vh' }}>
-                                    <AppointmentCalendar
-                                        appointments={filteredAppointments}
-                                        team={filteredTeam}
-                                        onAppointmentUpdate={handleUpdateAppointment}
-                                        onSelectEvent={handleSelectEvent}
-                                        onSelectSlot={handleSelectSlot}
-                                    />
-                                </div>
-                            </DndProvider>
+                            <div style={{ height: '80vh' }}>
+                                <AppointmentCalendar
+                                    appointments={filteredAppointments}
+                                    team={team}
+                                    onAppointmentUpdate={handleUpdateAppointment}
+                                    onSelectEvent={handleSelectEvent}
+                                    onSelectSlot={handleSelectSlot}
+                                />
+                            </div>
                         </CardContent>
                     </>
                 )}
@@ -1201,7 +1094,7 @@ function AppointmentsDashboard({
                                                             <div>
                                                                 <p className="font-semibold text-foreground">{apt.name}</p>
                                                                 <p className="text-sm">{serviceNames}</p>
-                                                                <Badge variant="outline" className="mt-2">{format(parseISO(apt.date), "d MMM yyyy", { locale: es })} - {apt.time}</Badge>
+                                                                <Badge variant="outline" className="mt-2">{format(parse(apt.date, 'yyyy-MM-dd', new Date()), "d MMM yyyy", { locale: es })} - {apt.time}</Badge>
                                                             </div>
                                                             <p className="text-sm">{barberName}</p>
                                                         </div>
@@ -1251,7 +1144,7 @@ function AppointmentsDashboard({
                                                     return (
                                                         <TableRow key={apt.id} className="text-muted-foreground bg-muted/50">
                                                             <TableCell>
-                                                                <Badge variant="outline">{format(parseISO(apt.date), "d MMM yyyy", { locale: es })}</Badge>
+                                                                <Badge variant="outline">{format(parse(apt.date, 'yyyy-MM-dd', new Date()), "d MMM yyyy", { locale: es })}</Badge>
                                                             </TableCell>
                                                             <TableCell className="font-medium text-foreground">{apt.name}</TableCell>
                                                             <TableCell>{serviceNames}</TableCell>
@@ -1305,6 +1198,7 @@ function AppointmentsDashboard({
                 {selectedAppointment && selectedAppointment.type === 'appointment' && (
                     <ConfirmSaleDialog
                         appointment={selectedAppointment}
+                        team={team}
                         onSaleConfirmed={onDataChange}
                         onAppointmentDeleted={onDataChange}
                         onOpenChange={setIsConfirmSaleOpen}

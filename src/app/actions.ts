@@ -8,8 +8,7 @@ import { db } from "@/lib/firebase";
 import { collection, addDoc, doc, getDoc, updateDoc, deleteDoc, query, where, getDocs, orderBy, limit, Timestamp, runTransaction, setDoc, writeBatch } from "firebase/firestore";
 import { format, parse, parseISO, compareAsc, addHours, subDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isToday as isTodayDateFns, isWithinInterval, differenceInDays, subMonths, getDay, addDays, lastDayOfMonth } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
-import { services as allServices } from '@/lib/data';
-// import { team as staticTeam } from '@/lib/team';
+import { services as allServices, getServiceDetails } from '@/lib/data';
 import { es } from 'date-fns/locale';
 import nodemailer from 'nodemailer';
 import path from 'path';
@@ -71,26 +70,10 @@ const notificationSchema = z.object({
 });
 
 
-// Helper to convert 12-hour time to 24-hour format
-const timeTo24Hour = (time12h: string) => {
-    const [time, modifier] = time12h.split(' ');
-    let [hours, minutes] = time.split(':');
-
-    if (hours === '12') {
-        hours = '00';
-    }
-
-    if (modifier && modifier.toUpperCase() === 'PM') {
-        hours = (parseInt(hours, 10) + 12).toString();
-    }
-
-    return `${hours.padStart(2, '0')}:${minutes}`;
-};
 
 // Static fallback for barber emails to ensure reliability
 const staticBarberEmails: { [key: string]: string } = {
     "alan-martinez": "stuntpk123@gmail.com",
-    "stiven-dorado": "qauay4@gmail.com",
 };
 
 
@@ -124,7 +107,9 @@ export async function blockTimeSlot(prevState: any, formData: FormData) {
 
     try {
         const batch = writeBatch(db);
-        const startDate = parseISO(date);
+        // Fix: Use parse instead of parseISO to treat "yyyy-MM-dd" as local time, 
+        // preventing UTC offset from shifting the date to previous day.
+        const startDate = parse(date, "yyyy-MM-dd", new Date());
 
         const getBlockedSlotPayload = (currentDate: Date) => ({
             name,
@@ -1342,13 +1327,7 @@ export type CustomerAnalytics = {
     appointments: CustomerAppointment[];
 };
 
-const getServiceCost = (serviceIds: string): { names: string, price: number } => {
-    const ids = serviceIds.split(',');
-    const services = allServices.filter(s => ids.includes(s.id));
-    const names = services.map(s => s.name).join(', ');
-    const price = services.reduce((acc, s) => acc + parseInt(s.price), 0);
-    return { names, price };
-};
+
 
 export async function addCustomer(prevState: any, formData: FormData) {
     const validatedFields = customerSchema.safeParse({
@@ -1482,7 +1461,7 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
                     customersData[email].phone = data.phone || customersData[email].phone;
                 }
 
-                const { names, price } = getServiceCost(data.service);
+                const { names, totalPrice: price } = getServiceDetails(data.service);
                 const createdAtTimestamp = data.createdAt as Timestamp;
 
                 customersData[email].appointments.push({
@@ -1581,6 +1560,7 @@ export type TeamMember = {
     description: string;
     imageUrl: string;
     isAvailable: boolean;
+    color?: string;
 };
 
 const createTeamMemberId = (name: string) => {
@@ -1629,7 +1609,33 @@ export async function addTeamMember(prevState: any, formData: FormData) {
         if (docSnap.exists()) {
             return { success: false, message: `Un colaborador con el nombre '${name}' ya existe.` };
         }
-        await setDoc(memberRef, { name, ...memberData });
+
+        // Assign a random color from palette
+        const palette = [
+            "#e11d48", // Rose
+            "#db2777", // Pink
+            "#9333ea", // Purple
+            "#7c3aed", // Violet
+            "#4f46e5", // Indigo
+            "#2563eb", // Blue (Alan)
+            "#0284c7", // Sky
+            "#0891b2", // Cyan
+            "#0d9488", // Teal
+            "#10b981", // Emerald
+            "#16a34a", // Green
+            "#65a30d", // Lime
+            "#ca8a04", // Yellow
+            "#d97706", // Amber
+            "#ea580c", // Orange
+            "#dc2626", // Red
+        ];
+        const randomColor = palette[Math.floor(Math.random() * palette.length)];
+
+        await setDoc(memberRef, {
+            name,
+            ...memberData,
+            color: randomColor
+        });
         return { success: true, message: `Colaborador '${name}' añadido con éxito.` };
     } catch (error) {
         console.error("Error adding team member:", error);
@@ -1656,16 +1662,9 @@ const initialTeamData = [
         description: "Te brindamos una experiencia única y personalizada 💫💇‍♂️.",
         imageUrl: "/multimedia/nuestro-equipo-alan.jpg",
         isAvailable: true,
+        color: "#2563eb", // Blue
     },
-    {
-        id: "stiven-dorado",
-        name: "Stiven Dorado",
-        role: "Barbero",
-        email: "qauay4@gmail.com",
-        description: "Dicen por ahí que conmigo es pura buena energía. Es conocido por su atención a todos los detalles y un resultado impecable.",
-        imageUrl: "/multimedia/nuestro-equipo-stiven.png",
-        isAvailable: true,
-    },
+
     {
         id: "barba-larga-brand",
         name: "Barba Larga",
@@ -1674,6 +1673,7 @@ const initialTeamData = [
         description: "Más que una barbería, un lugar donde el estilo y la confianza se forjan con maestría y dedicación.",
         imageUrl: "/multimedia/logo-barber.jpg",
         isAvailable: false,
+        color: "#ca8a04", // Gold
     },
     {
         id: "new-stylist-female",
@@ -1683,6 +1683,7 @@ const initialTeamData = [
         description: "Una nueva experta en estilo se unirá pronto a nuestro equipo para ofrecerte las últimas tendencias y un cuidado excepcional.",
         imageUrl: "https://picsum.photos/seed/stylist/600/600",
         isAvailable: false,
+        color: "#9333ea", // Purple
     },
     {
         id: "new-barber-male",
@@ -1692,6 +1693,7 @@ const initialTeamData = [
         description: "Estamos ampliando nuestro equipo con otro talentoso barbero. ¡Mantente atento para conocer a la nueva cara de Barba Larga!",
         imageUrl: "https://picsum.photos/seed/barber/600/600",
         isAvailable: false,
+        color: "#dc2626", // Red
     }
 ];
 
@@ -1714,11 +1716,14 @@ export async function getTeam(): Promise<TeamMember[]> {
                 id: docSnap.id,
                 ...docSnap.data(),
                 email: docSnap.data().email || null,
+                color: docSnap.data().color,
             } as TeamMember));
         }
 
         const team = querySnapshot.docs.map(doc => {
             const data = doc.data();
+            // Fall back to initialTeamData color if Firestore doesn't have one
+            const fallbackColor = initialTeamData.find(m => m.id === doc.id)?.color;
             return {
                 id: doc.id,
                 name: data.name,
@@ -1727,6 +1732,7 @@ export async function getTeam(): Promise<TeamMember[]> {
                 description: data.description,
                 imageUrl: data.imageUrl,
                 isAvailable: data.isAvailable,
+                color: data.color || fallbackColor,
             } as TeamMember;
         });
         return team;

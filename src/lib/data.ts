@@ -123,3 +123,16 @@ export const getEndTimeOptions = (date: Date): string[] => {
   return allTimes;
 };
 
+export const getServiceDetails = (ids: string) => {
+  if (!ids) return { names: 'Servicio Desconocido', totalPrice: 0 };
+  const serviceIds = ids.split(',');
+  const chosenServices = services.filter(s => serviceIds.includes(s.id.trim()));
+
+  const names = chosenServices.map(s => s.name).join(', ');
+  const totalPrice = chosenServices.reduce((total, s) => {
+    const price = parseInt(s.price.replace(/\D/g, ''), 10) || 0;
+    return total + price;
+  }, 0);
+
+  return { names, totalPrice };
+};

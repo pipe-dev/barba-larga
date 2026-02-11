@@ -1394,7 +1394,7 @@ function CustomersTab({ initialCustomers, isLoading, team, onDataChange }: { ini
                               {customer.appointments.map((apt, index) => {
                                 const isLastCompletedVisit = customer.lastVisitDate ? apt.date === format(customer.lastVisitDate, 'yyyy-MM-dd') && apt.time === customer.lastVisitTime : false;
                                 const isPending = apt.status === 'pending';
-                                const appointmentDate = parseISO(apt.date);
+                                const appointmentDate = parse(apt.date, 'yyyy-MM-dd', new Date());
                                 const missedAppointment = isPending && isPast(new Date(appointmentDate.setHours(23, 59, 59, 999)));
 
                                 return (

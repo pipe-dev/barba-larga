@@ -21,7 +21,7 @@ import { BookingSection } from "@/components/booking-section";
 import { StyleAdvisorSection } from "@/components/style-advisor-section";
 import { LocationSection } from "@/components/location-section";
 import { ContactSection } from "@/components/contact-section";
-import { Footer } from "@/components/footer";
+
 import { BottomNav } from "@/components/bottom-nav";
 import { AudioPlayer } from "@/components/audio-player";
 import { getNotifications, type Notification as NotificationType } from "@/app/actions";
@@ -39,13 +39,13 @@ const LeftSidebar = ({ onNavigate }: { onNavigate: (scene: Scene) => void }) => 
       </h1>
     </div>
     <nav className="flex flex-col space-y-3">
-        <button onClick={() => onNavigate('team')} className="thick-glass-button animate-pulse-glow-cyan w-[9.5rem] text-left">
-              <div className="thick-glass-button-inner">
-                <div className="thick-glass-button-content !py-2 !text-base justify-start px-4">
-                  <span>Agendar cita</span>
-                </div>
-              </div>
-            </button>
+      <button onClick={() => onNavigate('team')} className="thick-glass-button animate-pulse-glow-cyan w-[9.5rem] text-left">
+        <div className="thick-glass-button-inner">
+          <div className="thick-glass-button-content !py-2 !text-base justify-start px-4">
+            <span>Agendar cita</span>
+          </div>
+        </div>
+      </button>
       <button className="glass-button w-28 text-left" onClick={() => onNavigate('services')}>Servicios</button>
       <button className="glass-button w-28 text-left" onClick={() => onNavigate('ai-advisor')}>Asesor IA</button>
     </nav>
@@ -65,16 +65,16 @@ const LeftSidebar = ({ onNavigate }: { onNavigate: (scene: Scene) => void }) => 
   </aside>
 );
 
-const Notifications = ({notifications, isLoading}: {notifications: NotificationType[], isLoading: boolean}) => {
+const Notifications = ({ notifications, isLoading }: { notifications: NotificationType[], isLoading: boolean }) => {
   const plugin = React.useRef(
     Autoplay({ delay: 3000, stopOnInteraction: true })
   );
-  
+
   if (isLoading) {
     return (
-        <div className="glass-card p-4 h-24 flex items-center justify-center">
-            <Loader2 className="w-6 h-6 animate-spin text-white/70" />
-        </div>
+      <div className="glass-card p-4 h-24 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-white/70" />
+      </div>
     )
   }
 
@@ -114,7 +114,7 @@ const ClockAndMusic = () => {
         hour: '2-digit',
         minute: '2-digit',
       };
-      
+
       const bogotaTime = now.toLocaleTimeString("en-US", timeOptions);
       const bogotaSeconds = now.toLocaleTimeString("en-US", {
         timeZone: "America/Bogota",
@@ -139,7 +139,7 @@ const ClockAndMusic = () => {
   );
 };
 
-const RightSidebar = ({notifications, isLoading}: {notifications: NotificationType[], isLoading: boolean}) => {
+const RightSidebar = ({ notifications, isLoading }: { notifications: NotificationType[], isLoading: boolean }) => {
 
   const plugin = React.useRef(
     Autoplay({ delay: 2000, stopOnInteraction: false })
@@ -155,35 +155,35 @@ const RightSidebar = ({notifications, isLoading}: {notifications: NotificationTy
         }}
       >
         <CarouselContent>
-            <CarouselItem>
-                <div>
-                  <div className="glass-card flex items-center justify-center">
-                    <video
-                        src={"/multimedia/keratina-mujer.mp4"}
-                        autoPlay
-                        loop
-                        muted
-                        playsInline
-                        className="w-full h-full object-cover rounded-xl aspect-square"
-                    >
-                        Tu navegador no soporta el tag de video.
-                    </video>
-                  </div>
-                </div>
-            </CarouselItem>
-            <CarouselItem>
-                <div>
-                  <div className="glass-card flex items-center justify-center">
-                      <Image
-                        src={"/multimedia/corte-autoridad.jpg"}
-                        alt={"Corte de Autoridad"}
-                        width={150}
-                        height={150}
-                        className="w-full h-full object-cover rounded-xl aspect-square"
-                      />
-                  </div>
-                </div>
-            </CarouselItem>
+          <CarouselItem>
+            <div>
+              <div className="glass-card flex items-center justify-center">
+                <video
+                  src={"/multimedia/keratina-mujer.mp4"}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover rounded-xl aspect-square"
+                >
+                  Tu navegador no soporta el tag de video.
+                </video>
+              </div>
+            </div>
+          </CarouselItem>
+          <CarouselItem>
+            <div>
+              <div className="glass-card flex items-center justify-center">
+                <Image
+                  src={"/multimedia/corte-autoridad.jpg"}
+                  alt={"Corte de Autoridad"}
+                  width={150}
+                  height={150}
+                  className="w-full h-full object-cover rounded-xl aspect-square"
+                />
+              </div>
+            </div>
+          </CarouselItem>
         </CarouselContent>
       </Carousel>
       <Notifications notifications={notifications} isLoading={isLoading} />
@@ -199,7 +199,7 @@ export default function HomePage() {
   const [activeScene, setActiveScene] = useState<Scene>('home');
   const [notifications, setNotifications] = useState<NotificationType[]>([]);
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
-  
+
   useEffect(() => {
     setIsLoaded(true);
     if (videoRef.current) {
@@ -231,50 +231,50 @@ export default function HomePage() {
     <div className="relative h-screen w-screen">
       <TopNav activeScene={activeScene} onNavigate={handleNavigate} />
       <div className="absolute inset-0 bg-black">
-      <video
+        <video
           ref={videoRef}
           autoPlay
           loop
           muted
           playsInline
           className={cn("w-full h-full object-cover transition-opacity duration-1000", isLoaded ? "opacity-40" : "opacity-0")}
-      >
+        >
           <source src="/multimedia/Background-logo.mp4" type="video/mp4" />
-      </video>
+        </video>
       </div>
       <LeftSidebar onNavigate={handleNavigate} />
-      <RightSidebar notifications={notifications} isLoading={isLoadingNotifications}/>
-  </div>
+      <RightSidebar notifications={notifications} isLoading={isLoadingNotifications} />
+    </div>
   );
 
   return (
     <div className="font-sans min-h-screen w-full overflow-x-hidden bg-background relative">
-        
-        {activeScene === 'home' ? (
-          <HeroScene />
-        ) : (
-          <>
-            <TopNav activeScene={activeScene} onNavigate={handleNavigate}/>
-            <main className="pt-24 pb-28"> {/* Padding to avoid overlap with navbars */}
-              <div className="container px-4 md:px-6 max-w-7xl mx-auto">
-                {activeScene === 'about' && <AboutSection />}
-                {activeScene === 'team' && <TeamSection onNavigate={handleNavigate}/>}
-                {activeScene === 'services' && <ServiceCatalog onNavigate={handleNavigate}/>}
-                {activeScene === 'booking' && <BookingSection onNavigate={handleNavigate}/>}
-                {activeScene === 'ai-advisor' && <StyleAdvisorSection onNavigate={handleNavigate}/>}
-                {activeScene === 'location' && <LocationSection />}
-                {activeScene === 'contact' && <ContactSection />}
-              </div>
-            </main>
-          </>
-        )}
 
-        {activeScene !== 'home' && <Footer />}
+      {activeScene === 'home' ? (
+        <HeroScene />
+      ) : (
+        <>
+          <TopNav activeScene={activeScene} onNavigate={handleNavigate} />
+          <main className="pt-24 pb-28"> {/* Padding to avoid overlap with navbars */}
+            <div className="container px-4 md:px-6 max-w-7xl mx-auto">
+              {activeScene === 'about' && <AboutSection />}
+              {activeScene === 'team' && <TeamSection onNavigate={handleNavigate} />}
+              {activeScene === 'services' && <ServiceCatalog onNavigate={handleNavigate} />}
+              {activeScene === 'booking' && <BookingSection onNavigate={handleNavigate} />}
+              {activeScene === 'ai-advisor' && <StyleAdvisorSection onNavigate={handleNavigate} />}
+              {activeScene === 'location' && <LocationSection />}
+              {activeScene === 'contact' && <ContactSection />}
+            </div>
+          </main>
+        </>
+      )}
 
-        <BottomNav 
-            activeScene={activeScene}
-            onNavigate={handleNavigate}
-        />
+
+
+      <BottomNav
+        activeScene={activeScene}
+        onNavigate={handleNavigate}
+      />
     </div>
   );
 }
