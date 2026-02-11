@@ -104,10 +104,5 @@ const aiStyleAdvisorFlow = ai.defineFlow(
     }
   }
 
-    if (!output) {
-  throw new Error("No se pudo obtener respuesta del asesor de estilo.");
-}
 
-return output;
-  }
 );
