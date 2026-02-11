@@ -8,7 +8,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { ArrowLeft, BarChart, Package, Receipt, PlusCircle, Loader2, TrendingUp, TrendingDown, CreditCard, Smartphone, DollarSign as MoneyIcon, Banknote, Landmark, Warehouse, ShoppingCart, Trash2, Pencil, AlertCircle, Calendar, History, ShoppingBag, Users, Star, Repeat, UserX, ConciergeBell, MoreVertical, Briefcase, UserPlus, Mail, ChevronDown, CheckSquare, X, Phone, MessageCircle, Bell, Download, Users2 } from 'lucide-react';
-import { format, formatDistanceToNow, parseISO, isPast } from 'date-fns';
+import { format, formatDistanceToNow, parseISO, isPast, parse } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Bar, BarChart as RechartsBarChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts';
 import Image from 'next/image';
