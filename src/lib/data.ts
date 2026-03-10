@@ -94,6 +94,9 @@ export const services: Service[] = [
   }
 ];
 
+export const SLOT_INTERVAL_MINUTES = 10;
+export const MIN_GAP_MINUTES = 20;
+
 export const getBaseAvailableTimes = (date: Date): { morning: string[], afternoon: string[], night: string[] } => {
   const day = date.getDay(); // Sunday: 0, Monday: 1, ..., Saturday: 6
 

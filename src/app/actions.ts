@@ -367,6 +367,7 @@ export async function bookAppointment(prevState: any, formData: FormData) {
                 const serviceIdsArray = serviceIds!.split(',');
                 const chosenServices = allServices.filter(s => serviceIdsArray.includes(s.id));
                 const serviceNames = chosenServices.map(s => s.name).join(', ');
+                const totalDuration = chosenServices.reduce((total, s) => total + s.duration, 0);
                 const totalPrice = chosenServices.reduce((total, s) => total + parseInt(s.price), 0);
                 const formattedDate = format(parse(date, "yyyy-MM-dd", new Date()), "EEEE, d 'de' LLLL 'de' yyyy", { locale: es });
                 const barbershopAddress = "Calle 22N #6A-30 Ciudad Jardín, Popayán, Cauca, Colombia";
@@ -628,8 +629,8 @@ export async function reactivateAppointment(appointmentId: string): Promise<{ su
     }
 }
 
-export async function getAvailableTimesForDate(dateString: string, barberId: string): Promise<string[]> {
-    if (!dateString || !barberId) return [];
+export async function getAvailableTimesForDate(dateString: string, barberId: string): Promise<{ blocked: string[], gaps: string[] }> {
+    if (!dateString || !barberId) return { blocked: [], gaps: [] };
 
     try {
         const appointmentsCol = collection(db, 'appointments');
@@ -640,82 +641,100 @@ export async function getAvailableTimesForDate(dateString: string, barberId: str
         );
 
         const querySnapshot = await getDocs(q);
-        const bookedTimes = new Set<string>();
+        const blockedMinutes = new Set<number>();
 
-        const timeTo24 = (time12h: string): number => {
+        // Helper to convert "hh:mm a" or "hh:mmAM/PM" to total minutes since midnight
+        const timeToMinutes = (time12h: string): number => {
             if (!time12h) return -1;
-            const [time, modifier] = time12h.split(' ');
-            let [hours] = time.split(':').map(Number);
-
-            if (modifier?.toUpperCase() === 'PM' && hours < 12) {
-                hours += 12;
-            }
-            if (modifier?.toUpperCase() === 'AM' && hours === 12) {
-                hours = 0;
-            }
-            return hours;
+            const normalized = time12h.trim().toUpperCase();
+            const match = normalized.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+            if (!match) return -1;
+            let hours = parseInt(match[1], 10);
+            const minutes = parseInt(match[2], 10);
+            const modifier = match[3];
+            if (modifier === 'PM' && hours < 12) hours += 12;
+            if (modifier === 'AM' && hours === 12) hours = 0;
+            return hours * 60 + minutes;
         };
 
-        // Helper to get minutes from 12h time string
-        const timeToMinutes = (time12h: string): number => {
-            const h = timeTo24(time12h);
-            if (h === -1) return -1;
-            // We need minutes too
-            const [time] = time12h.split(' ');
-            const [, minutes] = time.split(':').map(Number);
-            return h * 60 + (minutes || 0);
-        }
+        // Helper to convert total minutes to "HH:MM AM/PM" format (with space for display)
+        const minutesToTimeStr = (totalMins: number): string => {
+            const h24 = Math.floor(totalMins / 60);
+            const m = totalMins % 60;
+            const ampm = h24 >= 12 ? 'PM' : 'AM';
+            let h12 = h24 % 12;
+            if (h12 === 0) h12 = 12;
+            return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
+        };
+
+        const INTERVAL = 10; // Must match SLOT_INTERVAL_MINUTES from data.ts
+        const MIN_GAP = 20;  // Must match MIN_GAP_MINUTES from data.ts
+
+        // Collect all appointment intervals
+        const appointments: { startMin: number, endMin: number }[] = [];
 
         querySnapshot.docs.forEach((docSnap) => {
             const data = docSnap.data();
 
-            // If we have an endTime, we use it to block all overlapped options
             if (data.time) {
-                const startTimeMinutes = timeToMinutes(data.time);
-                let endTimeMinutes = 0;
+                const startMin = timeToMinutes(data.time);
+                if (startMin === -1) return;
 
+                let endMin: number;
                 if (data.endTime) {
-                    endTimeMinutes = timeToMinutes(data.endTime);
+                    endMin = timeToMinutes(data.endTime);
+                    if (endMin === -1) endMin = startMin + 60;
                 } else {
-                    // Default to 60 mins if no endTime is set (legacy appointments)
-                    endTimeMinutes = startTimeMinutes + 60;
+                    endMin = startMin + 60; // Legacy fallback
                 }
 
-                // Now, we need to mark as "booked" any standard slot that overlaps with this interval
-                // Standard slots are usually hourly starting at 8:00 AM up to 8:00 PM (starts)
-                // But we don't know the exact slots here, so we just return the full list of "booked" slots 
-                // that fall within this range.
-                // Assuming slots are hourly on the hour:
+                appointments.push({ startMin, endMin });
 
-                // Iterate through every hour from 8 AM to 9 PM and check overlap
-                // Start of day 8:00 AM = 480 mins
-                // End of day 9:00 PM = 1260 mins
+                // Block every INTERVAL-minute slot within [startMin, endMin)
+                const firstBlocked = Math.floor(startMin / INTERVAL) * INTERVAL;
+                const lastBlocked = Math.ceil(endMin / INTERVAL) * INTERVAL;
 
-                for (let h = 8; h <= 20; h++) {
-                    const slotStartVals = h * 60;
-                    const slotEndVals = (h + 1) * 60; // Assuming 60 min slots for availability checking reference
-
-                    // If the appointment overlaps this slot:
-                    // (StartA < EndB) && (EndA > StartB)
-                    // (AppointmentStart < SlotEnd) && (AppointmentEnd > SlotStart)
-
-                    if (startTimeMinutes < slotEndVals && endTimeMinutes > slotStartVals) {
-                        // This slot is blocked
-                        const ampm = h >= 12 ? 'PM' : 'AM';
-                        let hourDisp = h % 12;
-                        if (hourDisp === 0) hourDisp = 12;
-                        const timeString = `${hourDisp.toString().padStart(2, '0')}:00 ${ampm}`;
-                        bookedTimes.add(timeString.toUpperCase().replace(/\s/g, ''));
-                    }
+                for (let t = firstBlocked; t < lastBlocked; t += INTERVAL) {
+                    blockedMinutes.add(t);
                 }
             }
         });
 
-        return Array.from(bookedTimes);
+        // Convert blocked minutes to formatted time strings
+        const blocked: string[] = [];
+        blockedMinutes.forEach(m => {
+            if (m >= 8 * 60 && m <= 20 * 60 + 50) {
+                blocked.push(minutesToTimeStr(m));
+            }
+        });
+
+        // Compute smart gap slots
+        // For each appointment, check if it ends mid-hour with > MIN_GAP remaining
+        const gapSet = new Set<string>();
+        for (const apt of appointments) {
+            const endMin = apt.endMin;
+            // Only create gap if the appointment doesn't end exactly on the hour
+            if (endMin % 60 !== 0) {
+                const nextHour = Math.ceil(endMin / 60) * 60;
+                const remaining = nextHour - endMin;
+                // Only show gap if remaining time is MORE than MIN_GAP minutes
+                if (remaining > MIN_GAP) {
+                    // Check that this gap time is NOT blocked by another appointment
+                    if (!blockedMinutes.has(endMin)) {
+                        // Check it's within business hours (8 AM to 8:50 PM)
+                        if (endMin >= 8 * 60 && endMin <= 20 * 60 + 50) {
+                            gapSet.add(minutesToTimeStr(endMin));
+                        }
+                    }
+                }
+            }
+        }
+
+        return { blocked, gaps: Array.from(gapSet) };
 
     } catch (error) {
         console.error('Error fetching booked times from Firestore:', error);
-        return [];
+        return { blocked: [], gaps: [] };
     }
 }
 

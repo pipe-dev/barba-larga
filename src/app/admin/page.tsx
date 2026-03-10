@@ -426,8 +426,8 @@ function AddAppointmentDialog({ team, onDataChange, onOpenChange, initialData }:
         setIsFetchingTimes(true);
         const dateString = format(forDate, "yyyy-MM-dd");
         getAvailableTimesForDate(dateString, forBarberId)
-            .then(times => {
-                const formattedTimes = times.map(t => t.toUpperCase().replace(/\s/g, ''));
+            .then(result => {
+                const formattedTimes = result.blocked.map(t => t.toUpperCase().replace(/\s/g, ''));
                 setBookedTimes(formattedTimes);
             })
             .catch(console.error)

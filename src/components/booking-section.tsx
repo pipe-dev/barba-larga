@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBooking } from "@/hooks/use-booking";
 import { useSuccessSound } from "@/hooks/use-success-sound";
 import { useShaverSound } from "@/hooks/use-shaver-sound";
-import { services as allServices, Service, getBaseAvailableTimes } from "@/lib/data";
+import { services as allServices, Service, getBaseAvailableTimes, SLOT_INTERVAL_MINUTES } from "@/lib/data";
 import { getServicesFromDB } from "@/app/actions/services";
 import { getSafeImageUrl } from "@/lib/image-validation";
 
@@ -62,6 +62,7 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
   const [date, setDate] = React.useState<Date | undefined>(new Date());
   const [selectedTime, setSelectedTime] = React.useState<string | undefined>();
   const [bookedTimes, setBookedTimes] = React.useState<string[]>([]);
+  const [gapSlots, setGapSlots] = React.useState<string[]>([]);
   const [isFetchingTimes, setIsFetchingTimes] = React.useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
   const [team, setTeam] = React.useState<TeamMember[]>([]);
@@ -130,9 +131,10 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
     setIsFetchingTimes(true);
     const dateString = format(forDate, "yyyy-MM-dd");
     try {
-      const times = await getAvailableTimesForDate(dateString, barberId);
-      const formattedTimes = times.map(t => t.toUpperCase().replace(/\s/g, ''));
-      setBookedTimes(formattedTimes);
+      const result = await getAvailableTimesForDate(dateString, barberId);
+      const formattedBlocked = result.blocked.map(t => t.toUpperCase().replace(/\s/g, ''));
+      setBookedTimes(formattedBlocked);
+      setGapSlots(result.gaps); // Keep original format for display
     } catch (error) {
       console.error(error);
       toast({
@@ -182,7 +184,20 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
     if (!date) return { morning: [], afternoon: [], night: [] };
     const baseTimes = getBaseAvailableTimes(date);
 
-    // Initial filter of already booked slots (server side logic determines blocked slots)
+    // Robust time parser that handles both "08:00 AM" and "08:00AM"
+    const timeToMinutes = (timeStr: string): number => {
+      const normalized = timeStr.trim().toUpperCase();
+      const match = normalized.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+      if (!match) return -1;
+      let hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const modifier = match[3];
+      if (modifier === 'PM' && hours < 12) hours += 12;
+      if (modifier === 'AM' && hours === 12) hours = 0;
+      return hours * 60 + minutes;
+    };
+
+    // Filter hourly slots that are directly blocked
     const filterBooked = (times: string[]) =>
       times.filter(time => !bookedTimes.includes(time.replace(/\s/g, '').toUpperCase()));
 
@@ -190,103 +205,71 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
     let availableAfternoon = filterBooked(baseTimes.afternoon);
     let availableNight = filterBooked(baseTimes.night);
 
-    // Filter by past times if today
+    // Merge gap slots into the appropriate time-of-day category
+    for (const gap of gapSlots) {
+      // Check gap isn't blocked (double-safety)
+      if (bookedTimes.includes(gap.replace(/\s/g, '').toUpperCase())) continue;
+
+      const mins = timeToMinutes(gap);
+      if (mins === -1) continue;
+
+      if (mins < 12 * 60) {
+        availableMorning.push(gap);
+      } else if (mins < 18 * 60) {
+        availableAfternoon.push(gap);
+      } else {
+        availableNight.push(gap);
+      }
+    }
+
+    // Sort each category by time
+    const sortByTime = (a: string, b: string) => timeToMinutes(a) - timeToMinutes(b);
+    availableMorning.sort(sortByTime);
+    availableAfternoon.sort(sortByTime);
+    availableNight.sort(sortByTime);
+
+    // Filter past times if today
     if (isTodayDateFns(date)) {
       const now = new Date();
-      const timeStringToDate = (timeStr: string) => {
-        return parse(timeStr, "hh:mm a", new Date());
-      };
-
-      const filterPastTimes = (times: string[]) => times.filter(time => {
-        const timeDate = timeStringToDate(time);
-        return timeDate > now;
-      });
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const filterPastTimes = (times: string[]) => times.filter(time => timeToMinutes(time) > nowMinutes);
 
       availableMorning = filterPastTimes(availableMorning);
       availableAfternoon = filterPastTimes(availableAfternoon);
       availableNight = filterPastTimes(availableNight);
     }
 
-    // --- NEW LOGIC: Duration Fit Check ---
-    // Even if a slot is "available" (not in bookedTimes), we must check if 
-    // the TOTAL DURATION fits without hitting a subsequent blocked slot or closing time.
-
-    const timeToMinutes = (timeStr: string) => {
-      const d = parse(timeStr, "hh:mm a", new Date());
-      return d.getHours() * 60 + d.getMinutes();
-    };
+    // Duration Fit Check: ensure the full service duration fits
+    // without overlapping any blocked 10-min interval or exceeding closing time
+    const bookedMinutesSet = new Set(bookedTimes.map(t => timeToMinutes(t)));
 
     const isSlotFit = (startTimeStr: string) => {
       const startMinutes = timeToMinutes(startTimeStr);
+      if (startMinutes === -1) return false;
       const endMinutes = startMinutes + totalDuration;
 
-      // 1. Check Closing Time (9:00 PM = 21:00 = 1260 mins)
+      // Check Closing Time (9:00 PM = 1260 mins)
       if (endMinutes > 1260) return false;
 
-      // 2. Check overlap with any booked time
-      // We need to check if ANY booked slot falls strictly inside our intended interval
-      // Our interval is [start, end)
-      // A booked slot is a point in time (start of a blocked hour). 
-      // If we book 8:00 - 9:30, we occupy 8:00 and 9:00 slots.
-      // So 8:00 is valid only if 9:00 is ALSO available (not in bookedTimes).
-
-      // Strategy: Iterate through all "potential" hourly slots covered by this service duration
-      // and ensure none of them are in `bookedTimes`.
-      // Note: stored `bookedTimes` are strings like "08:00AM".
-
-      // We check every hour after start until end
-      let currentCheck = startMinutes; // Start checking from the slot itself
-      // Actually, we need to check if the *intervals* overlap.
-      // Simplified approach for hourly slots:
-      // If I start at 8:00 (480) and last 90 mins (end 630 -> 10:30),
-      // I need 8:00 (480) free (checked by base filter)
-      // I need 9:00 (540) free.
-      // I need 10:00 (600) free? No, I finish at 9:30. 10:00 starts at 600.
-      // 9:30 < 10:00? Yes. So I don't need 10:00 free.
-      // So I need every HOURLY slot `s` where `s >= start` AND `s < end` to be free.
-
-      // Let's generate all hourly marks between start (inclusive) and end (exclusive)
-      // And check if they are in `bookedTimes`.
-
-      // We normalize bookedTimes for easier lookup
-      const bookedMinutesSet = new Set(bookedTimes.map(t => timeToMinutes(t)));
-
-      // Check every 60 minutes from start
-      for (let t = startMinutes; t < endMinutes; t += 60) {
-        // We allow the first slot (t === startMinutes) to be checked here too, 
-        // although it's redundant with the initial filter, it's safe.
-        // But wait, `bookedTimes` contains formatted strings.
-        // We can just check the Set.
-
-        // However, t might not be exactly on the hour if we allowed non-hourly starts,
-        // but `bookedTimes` are strictly hourly strings from the DB/Actions.
-        // So we round `t` to the nearest hour? 
-        // The system strictly produces "08:00 AM", "09:00 AM" etc.
-        // So we only care about `t` values that align with hours.
-        // But `startMinutes` comes from `baseTimes` which are hourly.
-        // So `t` will always be hourly.
-
+      // Check every 10-min interval for overlap
+      for (let t = startMinutes; t < endMinutes; t += SLOT_INTERVAL_MINUTES) {
         if (bookedMinutesSet.has(t)) {
-          // Found a blockage in the middle of our service
           return false;
         }
       }
-
       return true;
     };
 
-    // Apply the fit filter
     availableMorning = availableMorning.filter(isSlotFit);
     availableAfternoon = availableAfternoon.filter(isSlotFit);
     availableNight = availableNight.filter(isSlotFit);
-
 
     return {
       morning: availableMorning,
       afternoon: availableAfternoon,
       night: availableNight,
     };
-  }, [date, bookedTimes, totalDuration]);
+  }, [date, bookedTimes, gapSlots, totalDuration]);
 
   const hasAvailableTimes = morning.length > 0 || afternoon.length > 0 || night.length > 0;
 
