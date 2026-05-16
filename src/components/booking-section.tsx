@@ -162,6 +162,7 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
       if (bookingCardRef.current) {
         bookingCardRef.current.scrollIntoView({ behavior: 'smooth' });
       }
+
       setTimeout(() => {
         playSuccessSound();
         setCurrentStep("confirmed");
@@ -490,7 +491,25 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
                   </div>
                 </div>
 
-                <form ref={formRef} action={formAction} className="space-y-6">
+                <form 
+                  ref={formRef} 
+                  action={formAction} 
+                  className="space-y-6"
+                  onSubmit={(e) => {
+                    const formData = new FormData(e.currentTarget);
+                    const clientName = formData.get('name') as string;
+                    if (chosenBarber && chosenBarber.whatsapp && clientName) {
+                      const serviceNames = chosenServices.map(s => s.name).join(', ');
+                      const totalDuration = chosenServices.reduce((acc, s) => acc + s.duration, 0);
+                      const totalPrice = chosenServices.reduce((acc, s) => acc + parseInt(s.price), 0);
+                      const formattedPrice = totalPrice.toLocaleString('es-CO');
+                      const formattedDate = date ? format(date, "yyyy-MM-dd") : "";
+                      const waMessage = `¡Hola ${chosenBarber.name}! Acabo de agendar una cita contigo en Barba Larga.\n\n*Detalles de la cita:*\n👤 *Cliente:* ${clientName}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${selectedTime}\n✂️ *Servicios:* ${serviceNames}\n⏱ *Duración estimada:* ${totalDuration} min\n💰 *Total:* $${formattedPrice}\n\n¡Nos vemos pronto!`;
+                      const waUrl = `https://api.whatsapp.com/send?phone=${chosenBarber.whatsapp}&text=${encodeURIComponent(waMessage)}`;
+                      window.open(waUrl, "_blank", "noopener,noreferrer");
+                    }
+                  }}
+                >
                   <input type="hidden" name="barberId" value={selectedBarberId || ""} />
                   <input type="hidden" name="service" value={selectedServices.join(',')} />
                   <input type="hidden" name="date" value={date ? format(date, "yyyy-MM-dd") : ""} />
@@ -530,6 +549,7 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
                 serviceName={chosenServices.map(s => s.name).join(', ')}
                 date={date ? format(date, "PPP", { locale: es }) : ""}
                 time={selectedTime || ""}
+                whatsappUrl={state.whatsappUrl}
                 onBookAnother={resetFlow}
               />
             )}

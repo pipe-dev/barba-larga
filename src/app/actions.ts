@@ -223,6 +223,7 @@ export async function bookAppointment(prevState: any, formData: FormData) {
     const { name, email: clientEmail, phone, service: serviceIds, date, time, barberId } = validatedFields.data;
 
     const newAppointmentRef = doc(collection(db, "appointments"));
+    let whatsappUrl: string | undefined = undefined;
 
     try {
         await runTransaction(db, async (transaction) => {
@@ -344,17 +345,33 @@ export async function bookAppointment(prevState: any, formData: FormData) {
             }
         });
 
-        // Email sending logic (omitted for brevity in replacement, but kept in original flow)
-        // Re-adding the email sending logic to ensure it isn't lost
+        // --- Shared variables for WhatsApp and Email ---
+        const team = await getTeam();
+        const barber = team.find(b => b.id === barberId);
+        if (!barber) throw new Error("Barber not found.");
 
+        const serviceIdsArray = serviceIds!.split(',');
+        const chosenServices = allServices.filter(s => serviceIdsArray.includes(s.id));
+        const serviceNames = chosenServices.map(s => s.name).join(', ');
+        const totalDuration = chosenServices.reduce((total, s) => total + s.duration, 0);
+        const totalPrice = chosenServices.reduce((total, s) => total + parseInt(s.price), 0);
+        const formattedDate = format(parse(date, "yyyy-MM-dd", new Date()), "EEEE, d 'de' LLLL 'de' yyyy", { locale: es });
+        const barbershopAddress = "Calle 22N #6A-30 Ciudad Jardín, Popayán, Cauca, Colombia";
+        const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(barbershopAddress)}`;
+        
+        if (barber.whatsapp) {
+            const formattedPrice = totalPrice.toLocaleString('es-CO');
+            const waMessage = `¡Hola ${barber.name}! Acabo de agendar una cita contigo en Barba Larga.\n\n*Detalles de la cita:*\n👤 *Cliente:* ${name}\n📅 *Fecha:* ${date}\n⏰ *Hora:* ${time}\n✂️ *Servicios:* ${serviceNames}\n⏱ *Duración estimada:* ${totalDuration} min\n💰 *Total:* $${formattedPrice}\n\n¡Nos vemos pronto!`;
+            whatsappUrl = `https://api.whatsapp.com/send?phone=${barber.whatsapp}&text=${encodeURIComponent(waMessage)}`;
+        } else {
+            whatsappUrl = "https://wa.link/rxl87s"; // Fallback if barber has no whatsapp
+        }
+
+        // --- Email Sending Logic ---
         const GMAIL_USER = process.env.GMAIL_USER || 'citasbarbalarga@gmail.com';
-        const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || 'phka jrwd hxaq kryd';
+        const GMAIL_APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s/g, '');
 
-        if (GMAIL_USER && GMAIL_APP_PASSWORD && clientEmail) {
-            const team = await getTeam();
-            const barber = team.find(b => b.id === barberId);
-            if (!barber) throw new Error("Barber not found for email sending."); // Should be found as we checked before transaction
-
+        if (GMAIL_USER && GMAIL_APP_PASSWORD) {
             try {
                 const transporter = nodemailer.createTransport({
                     service: 'gmail',
@@ -362,20 +379,27 @@ export async function bookAppointment(prevState: any, formData: FormData) {
                         user: GMAIL_USER,
                         pass: GMAIL_APP_PASSWORD,
                     },
+                    tls: {
+                        rejectUnauthorized: false,
+                    },
                 });
 
-                const serviceIdsArray = serviceIds!.split(',');
-                const chosenServices = allServices.filter(s => serviceIdsArray.includes(s.id));
-                const serviceNames = chosenServices.map(s => s.name).join(', ');
-                const totalDuration = chosenServices.reduce((total, s) => total + s.duration, 0);
-                const totalPrice = chosenServices.reduce((total, s) => total + parseInt(s.price), 0);
-                const formattedDate = format(parse(date, "yyyy-MM-dd", new Date()), "EEEE, d 'de' LLLL 'de' yyyy", { locale: es });
-                const barbershopAddress = "Calle 22N #6A-30 Ciudad Jardín, Popayán, Cauca, Colombia";
-                const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(barbershopAddress)}`;
-                const whatsappUrl = "https://wa.link/rxl87s";
+                // Texto plano (obligatorio para evitar spam)
+                const clientTextContent = `Cita Confirmada - Barba Larga
 
-                const logoPath = path.join(process.cwd(), 'public', 'multimedia', 'logo-barber.jpg');
-                const logoCid = 'logo-barber';
+Hola ${name}, tu cita ha sido agendada con éxito.
+
+Barbero: ${barber.name}
+Fecha: ${formattedDate}
+Hora: ${time}
+Servicios: ${serviceNames}
+Total: $${totalPrice.toLocaleString('es-CO')}
+
+Dirección: ${barbershopAddress}
+Maps: ${directionsUrl}
+WhatsApp: ${whatsappUrl}
+
+Barba Larga - Popayán, Colombia`;
 
                 const clientEmailHtml = `
             <!DOCTYPE html>
@@ -383,110 +407,107 @@ export async function bookAppointment(prevState: any, formData: FormData) {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Confirmación de Cita - Barba Larga</title>
-                <style>
-                    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@900&family=Roboto:wght@400;700&display=swap');
-                    body { margin: 0; padding: 0; background-color: #121212; font-family: 'Roboto', Arial, sans-serif; }
-                    .email-container { max-width: 600px; margin: 40px auto; background-color: #1e1e1e; border: 1px solid #39FF14; border-radius: 8px; overflow: hidden; box-shadow: 0 0 20px rgba(57, 255, 20, 0.3); }
-                    .header { text-align: center; padding: 20px; background-color: #1a1a1a; }
-                    .header img { max-width: 120px; border-radius: 50%; }
-                    .content { padding: 30px; color: #e0e0e0; }
-                    .content h1 { color: #ffffff; font-family: 'Orbitron', sans-serif; font-size: 28px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 0 5px #39FF14; }
-                    .content p { line-height: 1.6; margin: 0 0 20px; }
-                    .details-box { background-color: #2a2a2a; border-left: 4px solid #39FF14; padding: 20px; margin: 20px 0; border-radius: 4px; }
-                    .details-box h2 { color: #39FF14; font-size: 20px; margin: 0 0 15px; font-family: 'Orbitron', sans-serif; }
-                    .details-list { list-style: none; padding: 0; margin: 0; }
-                    .details-list li { margin-bottom: 12px; font-size: 16px; display: flex; justify-content: space-between; }
-                    .details-list li strong { color: #ffffff; }
-                    .button-container { text-align: center; margin: 20px 0; }
-                    .button { background-color: #39FF14; color: #121212; padding: 14px 30px; text-decoration: none; border-radius: 50px; font-weight: bold; font-family: 'Orbitron', sans-serif; display: inline-block; box-shadow: 0 0 10px #39FF14; transition: all 0.3s ease; }
-                    .button.whatsapp { background-color: #25D366; color: #ffffff; box-shadow: 0 0 10px #25D366; }
-                    .button.whatsapp:hover { background-color: #1DA851; }
-                    .button:hover { background-color: #ffffff; color: #121212; box-shadow: 0 0 20px #39FF14; }
-                    .footer { background-color: #2a2a2a; color: #888; padding: 20px; text-align: center; font-size: 12px; }
-                </style>
+                <title>Confirmacion de Cita</title>
             </head>
-            <body>
-                <div class="email-container">
-                    <div class="header">
-                        <img src="cid:${logoCid}" alt="Logo de Barba Larga">
-                    </div>
-                    <div class="content">
-                        <h1>¡Cita Confirmada!</h1>
-                        <p>¡Hola, ${name}! Tu cita en <strong>Barba Larga</strong> con <strong>${barber.name}</strong> ha sido agendada con éxito. Prepárate para una experiencia de estilo superior.</p>
-                        
-                        <div class="details-box">
-                            <h2>Detalles de tu Cita</h2>
-                            <ul class="details-list">
-                                <li><strong>Barbero:</strong> <span>${barber.name}</span></li>
-                                <li><strong>Fecha:</strong> <span>${formattedDate}</span></li>
-                                <li><strong>Hora:</strong> <span>${time}</span></li>
-                                <li><strong>Duración Estimada:</strong> <span>${totalDuration} min</span></li>
-                                <li><strong>Servicio(s):</strong> <span>${serviceNames}</span></li>
-                                <hr style="border: 1px dashed #444; width: 100%; margin: 10px 0;">
-                                <li><strong>Total Estimado:</strong> <span>$${totalPrice.toLocaleString('es-CO')}</span></li>
-                            </ul>
-                        </div>
+            <body style="margin:0;padding:0;background-color:#121212;font-family:Arial,sans-serif;">
+                <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#121212;">
+                <tr><td align="center" style="padding:20px 0;">
+                <table width="600" cellpadding="0" cellspacing="0" style="background-color:#1e1e1e;border:1px solid #39FF14;border-radius:8px;overflow:hidden;">
+                    <tr>
+                        <td style="padding:30px;color:#e0e0e0;">
+                            <h1 style="color:#39FF14;font-size:24px;margin:0 0 10px;text-align:center;text-transform:uppercase;letter-spacing:1px;">Cita Confirmada</h1>
+                            <p style="text-align:center;font-size:16px;margin:0 0 20px;">Hola <strong>${name}</strong>, tu cita en <strong>Barba Larga</strong> con <strong>${barber.name}</strong> ha sido agendada.</p>
+                            
+                            <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#2a2a2a;border-left:4px solid #39FF14;border-radius:4px;margin:20px 0;">
+                                <tr><td style="padding:20px;">
+                                    <p style="margin:0 0 8px;font-size:16px;color:#fff;"><span style="color:#39FF14;font-weight:bold;">Barbero:</span> ${barber.name}</p>
+                                    <p style="margin:0 0 8px;font-size:16px;color:#fff;"><span style="color:#39FF14;font-weight:bold;">Fecha:</span> ${formattedDate}</p>
+                                    <p style="margin:0 0 8px;font-size:16px;color:#fff;"><span style="color:#39FF14;font-weight:bold;">Hora:</span> ${time}</p>
+                                    <p style="margin:0 0 8px;font-size:16px;color:#fff;"><span style="color:#39FF14;font-weight:bold;">Servicios:</span> ${serviceNames}</p>
+                                    <p style="margin:0;font-size:18px;color:#39FF14;font-weight:bold;">Total: $${totalPrice.toLocaleString('es-CO')}</p>
+                                </td></tr>
+                            </table>
 
-                        <div class="button-container">
-                            <a href="${directionsUrl}" target="_blank" class="button">CÓMO LLEGAR</a>
-                        </div>
-                        <div class="button-container" style="margin-top: 10px;">
-                            <a href="${whatsappUrl}" target="_blank" class="button whatsapp">CONTACTAR POR WHATSAPP</a>
-                        </div>
-                        
-                        <p style="font-size: 14px; text-align: center; margin-top: 30px;">Si necesitas reprogramar o cancelar, por favor contáctanos con antelación.</p>
-                    </div>
-                    <div class="footer">
-                        <p>&copy; ${new Date().getFullYear()} Barba Larga. Todos los derechos reservados.<br>Popayán, Cauca, Colombia.</p>
-                    </div>
-                </div>
+                            <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                                <td align="center" style="padding:10px 0;">
+                                    <a href="${directionsUrl}" target="_blank" style="background-color:#39FF14;color:#121212;padding:12px 25px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">COMO LLEGAR</a>
+                                </td>
+                            </tr><tr>
+                                <td align="center" style="padding:10px 0;">
+                                    <a href="${whatsappUrl}" target="_blank" style="background-color:#25D366;color:#ffffff;padding:12px 25px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">WHATSAPP</a>
+                                </td>
+                            </tr></table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color:#1a1a1a;color:#888;padding:15px;text-align:center;font-size:12px;">
+                            Barba Larga - Popayan, Colombia
+                        </td>
+                    </tr>
+                </table>
+                </td></tr>
+                </table>
             </body>
             </html>
             `;
 
-                await transporter.sendMail({
-                    from: `"Barba Larga" <${GMAIL_USER}>`,
-                    to: clientEmail,
-                    subject: `🚀 Tu Cita en Barba Larga está Confirmada para el ${formattedDate}`,
-                    html: clientEmailHtml,
-                    attachments: [{
-                        filename: 'logo-barber.jpg',
-                        path: logoPath,
-                        cid: logoCid
-                    }]
-                });
+                if (clientEmail) {
+                    await transporter.sendMail({
+                        from: GMAIL_USER,
+                        to: clientEmail,
+                        subject: `Confirmacion de Cita - Barba Larga - ${formattedDate}`,
+                        text: clientTextContent,
+                        html: clientEmailHtml,
+                    });
+                }
 
                 const barberEmail = barber.email || staticBarberEmails[barberId] || null;
-                if (barberEmail) {
-                    const barberEmailHtml = `
-                    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-                        <h1 style="color: #333;">Nueva Reserva Recibida</h1>
-                        <p>Se ha agendado una nueva cita a través de la página web.</p>
-                        <h2>Detalles de la Cita:</h2>
-                        <ul>
-                            <li><strong>Barbero:</strong> ${barber.name}</li>
-                            <li><strong>Cliente:</strong> ${name}</li>
-                            <li><strong>Email del cliente:</strong> ${clientEmail}</li>
-                            ${phone ? `<li><strong>Teléfono del cliente:</strong> ${phone}</li>` : ''}
-                            <li><strong>Fecha:</strong> ${formattedDate}</li>
-                            <li><strong>Hora:</strong> ${time}</li>
-                            <li><strong>Duración:</strong> ${totalDuration} min</li>
-                            <li><strong>Servicio(s):</strong> ${serviceNames}</li>
-                            <li><strong>Total Estimado:</strong> $${totalPrice.toLocaleString('es-CO')}</li>
-                        </ul>
-                    </div>
-                `;
+                const ADMIN_EMAIL = 'stuntpk123@gmail.com';
+                const notificationRecipients = [ADMIN_EMAIL];
+                if (barberEmail && barberEmail !== ADMIN_EMAIL) {
+                    notificationRecipients.push(barberEmail);
+                }
 
-                    await transporter.sendMail({
-                        from: `"Sistema de Reservas" <${GMAIL_USER}>`,
-                        to: barberEmail,
-                        subject: `¡Nueva Reserva! - ${name} para el ${formattedDate}`,
-                        html: barberEmailHtml,
-                    });
-                } else {
+                const adminText = `Nueva Reserva - Barba Larga
+
+Barbero: ${barber.name}
+Cliente: ${name}
+Email: ${clientEmail || 'No proporcionado'}
+${phone ? `Telefono: ${phone}` : ''}
+Fecha: ${formattedDate}
+Hora: ${time}
+Duracion: ${totalDuration} min
+Servicios: ${serviceNames}
+Total: $${totalPrice.toLocaleString('es-CO')}`;
+
+                const adminHtml = `
+                <div style="font-family:Arial,sans-serif;line-height:1.6;max-width:600px;">
+                    <h2 style="color:#333;">Nueva Reserva Recibida</h2>
+                    <p>Se ha agendado una nueva cita.</p>
+                    <table style="border-collapse:collapse;width:100%;">
+                        <tr><td style="padding:8px;border-bottom:1px solid #eee;font-weight:bold;">Barbero</td><td style="padding:8px;border-bottom:1px solid #eee;">${barber.name}</td></tr>
+                        <tr><td style="padding:8px;border-bottom:1px solid #eee;font-weight:bold;">Cliente</td><td style="padding:8px;border-bottom:1px solid #eee;">${name}</td></tr>
+                        <tr><td style="padding:8px;border-bottom:1px solid #eee;font-weight:bold;">Email</td><td style="padding:8px;border-bottom:1px solid #eee;">${clientEmail || 'No proporcionado'}</td></tr>
+                        ${phone ? `<tr><td style="padding:8px;border-bottom:1px solid #eee;font-weight:bold;">Telefono</td><td style="padding:8px;border-bottom:1px solid #eee;">${phone}</td></tr>` : ''}
+                        <tr><td style="padding:8px;border-bottom:1px solid #eee;font-weight:bold;">Fecha</td><td style="padding:8px;border-bottom:1px solid #eee;">${formattedDate}</td></tr>
+                        <tr><td style="padding:8px;border-bottom:1px solid #eee;font-weight:bold;">Hora</td><td style="padding:8px;border-bottom:1px solid #eee;">${time}</td></tr>
+                        <tr><td style="padding:8px;border-bottom:1px solid #eee;font-weight:bold;">Duracion</td><td style="padding:8px;border-bottom:1px solid #eee;">${totalDuration} min</td></tr>
+                        <tr><td style="padding:8px;border-bottom:1px solid #eee;font-weight:bold;">Servicios</td><td style="padding:8px;border-bottom:1px solid #eee;">${serviceNames}</td></tr>
+                        <tr><td style="padding:8px;font-weight:bold;">Total</td><td style="padding:8px;">$${totalPrice.toLocaleString('es-CO')}</td></tr>
+                    </table>
+                </div>`;
+
+                await transporter.sendMail({
+                    from: GMAIL_USER,
+                    to: notificationRecipients,
+                    subject: `Nueva Reserva: ${name} - ${formattedDate}`,
+                    text: adminText,
+                    html: adminHtml,
+                });
+
+                if (!barberEmail) {
                     await updateDoc(newAppointmentRef, {
-                        adminNotes: `Failed to send email notification to barber ${barber.name} (email not found).`
+                        adminNotes: `Notificacion enviada solo al administrador. El barbero ${barber.name} no tiene correo configurado.`
                     });
                 }
 
@@ -504,11 +525,14 @@ export async function bookAppointment(prevState: any, formData: FormData) {
             });
         }
 
+
+
         const successMessage = `¡Reserva confirmada! Tu cita para el ${date} a las ${time} ha sido agendada.`;
 
         return {
             success: true,
-            message: successMessage
+            message: successMessage,
+            whatsappUrl
         };
     } catch (error) {
         console.error("Error booking appointment:", error);
@@ -1580,6 +1604,8 @@ export type TeamMember = {
     imageUrl: string;
     isAvailable: boolean;
     color?: string;
+    whatsapp?: string;
+    order?: number;
 };
 
 const createTeamMemberId = (name: string) => {
@@ -1599,6 +1625,7 @@ const newTeamMemberSchema = z.object({
     description: z.string().min(10, { message: "La descripción debe tener al menos 10 caracteres." }),
     imageUrl: z.string().min(1, { message: "Por favor, introduce una ruta de imagen válida." }),
     isAvailable: z.boolean().default(true),
+    whatsapp: z.string().optional().or(z.literal("")),
 });
 
 export async function addTeamMember(prevState: any, formData: FormData) {
@@ -1609,6 +1636,7 @@ export async function addTeamMember(prevState: any, formData: FormData) {
         description: formData.get("description"),
         imageUrl: formData.get("imageUrl"),
         isAvailable: formData.get("isAvailable") === 'on',
+        whatsapp: (formData.get("whatsapp") as string || "").replace(/[^0-9]/g, ''),
     });
 
     if (!validatedFields.success) {
@@ -1650,10 +1678,16 @@ export async function addTeamMember(prevState: any, formData: FormData) {
         ];
         const randomColor = palette[Math.floor(Math.random() * palette.length)];
 
+        // Assign default order as last
+        const teamCol = collection(db, "team");
+        const teamSnap = await getDocs(query(teamCol));
+        const maxOrder = teamSnap.empty ? 0 : Math.max(...teamSnap.docs.map(d => d.data().order ?? 0));
+
         await setDoc(memberRef, {
             name,
             ...memberData,
-            color: randomColor
+            color: randomColor,
+            order: maxOrder + 1
         });
         return { success: true, message: `Colaborador '${name}' añadido con éxito.` };
     } catch (error) {
@@ -1670,6 +1704,7 @@ const teamMemberSchema = z.object({
     imageUrl: z.string().url({ message: "Por favor, introduce una URL de imagen válida." }),
     isAvailable: z.boolean().default(true),
     role: z.string(),
+    whatsapp: z.string().optional().or(z.literal("")),
 });
 
 const initialTeamData = [
@@ -1682,6 +1717,7 @@ const initialTeamData = [
         imageUrl: "/multimedia/nuestro-equipo-alan.jpg",
         isAvailable: true,
         color: "#2563eb", // Blue
+        order: 0,
     },
 
     {
@@ -1693,6 +1729,7 @@ const initialTeamData = [
         imageUrl: "/multimedia/logo-barber.jpg",
         isAvailable: false,
         color: "#ca8a04", // Gold
+        order: 1,
     },
     {
         id: "new-stylist-female",
@@ -1703,6 +1740,7 @@ const initialTeamData = [
         imageUrl: "https://picsum.photos/seed/stylist/600/600",
         isAvailable: false,
         color: "#9333ea", // Purple
+        order: 2,
     },
     {
         id: "new-barber-male",
@@ -1713,6 +1751,7 @@ const initialTeamData = [
         imageUrl: "https://picsum.photos/seed/barber/600/600",
         isAvailable: false,
         color: "#dc2626", // Red
+        order: 3,
     }
 ];
 
@@ -1736,6 +1775,8 @@ export async function getTeam(): Promise<TeamMember[]> {
                 ...docSnap.data(),
                 email: docSnap.data().email || null,
                 color: docSnap.data().color,
+                whatsapp: docSnap.data().whatsapp || "",
+                order: docSnap.data().order ?? 999,
             } as TeamMember));
         }
 
@@ -1752,9 +1793,11 @@ export async function getTeam(): Promise<TeamMember[]> {
                 imageUrl: data.imageUrl,
                 isAvailable: data.isAvailable,
                 color: data.color || fallbackColor,
+                whatsapp: data.whatsapp || "",
+                order: data.order ?? 999,
             } as TeamMember;
         });
-        return team;
+        return team.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
 
     } catch (error) {
         console.error('Error fetching team:', error);
@@ -1772,6 +1815,7 @@ export async function updateTeamMember(prevState: any, formData: FormData) {
         imageUrl: formData.get("imageUrl"),
         isAvailable: formData.get("isAvailable") === 'on',
         role: formData.get("role"),
+        whatsapp: (formData.get("whatsapp") as string || "").replace(/[^0-9]/g, ''),
     };
 
     const validatedFields = teamMemberSchema.safeParse(dataToValidate);
@@ -1799,6 +1843,7 @@ export async function updateTeamMember(prevState: any, formData: FormData) {
             imageUrl: memberData.imageUrl,
             isAvailable: memberData.isAvailable,
             role: memberData.role,
+            whatsapp: memberData.whatsapp || "",
         });
         return { success: true, message: "Colaborador actualizado con éxito." };
     } catch (error) {
@@ -1818,6 +1863,21 @@ export async function toggleTeamMemberAvailability(id: string, isAvailable: bool
     } catch (error) {
         console.error("Error updating availability:", error);
         return { success: false, message: "No se pudo actualizar la disponibilidad." };
+    }
+}
+
+export async function updateTeamOrder(orders: { id: string, order: number }[]) {
+    try {
+        const batch = writeBatch(db);
+        orders.forEach(item => {
+            const memberRef = doc(db, "team", item.id);
+            batch.update(memberRef, { order: item.order });
+        });
+        await batch.commit();
+        return { success: true, message: "Orden actualizado exitosamente." };
+    } catch (error) {
+        console.error("Error updating team order:", error);
+        return { success: false, message: "No se pudo actualizar el orden." };
     }
 }
 

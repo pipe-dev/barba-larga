@@ -10,7 +10,7 @@ import { z } from "zod";
 import { ArrowLeft, Loader2, PlusCircle, Trash2, Pencil, Users2, AlertTriangle } from 'lucide-react';
 import Image from 'next/image';
 
-import { getTeam, updateTeamMember, addTeamMember, toggleTeamMemberAvailability, deleteTeamMember } from '@/app/actions';
+import { getTeam, updateTeamMember, addTeamMember, toggleTeamMemberAvailability, deleteTeamMember, updateTeamOrder } from '@/app/actions';
 import type { TeamMember } from '@/app/actions';
 import { useToast } from "@/hooks/use-toast";
 import { isValidImageUrl, getSafeImageUrl } from '@/lib/image-validation';
@@ -53,6 +53,7 @@ const newTeamMemberFormSchema = z.object({
     message: "La URL debe comenzar con http:// o https:// (no archivos locales).",
   }),
   isAvailable: z.boolean().default(true),
+  whatsapp: z.string().optional().or(z.literal("")),
 });
 
 type NewTeamMemberFormData = z.infer<typeof newTeamMemberFormSchema>;
@@ -64,7 +65,7 @@ function AddTeamMemberForm({ onFormSubmit, onOpenChange }: { onFormSubmit: () =>
 
   const form = useForm<NewTeamMemberFormData>({
     resolver: zodResolver(newTeamMemberFormSchema),
-    defaultValues: { name: "", role: "", description: "", imageUrl: "", isAvailable: true, email: "" },
+    defaultValues: { name: "", role: "", description: "", imageUrl: "", isAvailable: true, email: "", whatsapp: "" },
   });
 
   React.useEffect(() => {
@@ -86,6 +87,7 @@ function AddTeamMemberForm({ onFormSubmit, onOpenChange }: { onFormSubmit: () =>
       >
         <FormField control={form.control} name="name" render={({ field }) => (<FormItem> <FormLabel>Nombre</FormLabel> <FormControl><Input {...field} name="name" /></FormControl> <FormMessage /> </FormItem>)} />
         <FormField control={form.control} name="email" render={({ field: { value, ...field } }) => (<FormItem> <FormLabel>Email (para notificaciones)</FormLabel> <FormControl><Input {...field} value={value ?? ""} name="email" type="email" placeholder="ejemplo@email.com" /></FormControl> <FormMessage /> </FormItem>)} />
+        <FormField control={form.control} name="whatsapp" render={({ field: { value, ...field } }) => (<FormItem> <FormLabel>WhatsApp (opcional, ej. 573001234567)</FormLabel> <FormControl><Input {...field} value={value ?? ""} name="whatsapp" type="tel" placeholder="Código de país + número (solo dígitos)" /></FormControl> <FormMessage /> </FormItem>)} />
         <FormField control={form.control} name="role" render={({ field }) => (<FormItem> <FormLabel>Rol</FormLabel> <FormControl><Input {...field} name="role" placeholder="Ej: Barbero, Estilista" /></FormControl> <FormMessage /> </FormItem>)} />
         <FormField control={form.control} name="description" render={({ field }) => (<FormItem> <FormLabel>Descripción</FormLabel> <FormControl><Textarea {...field} name="description" /></FormControl> <FormMessage /> </FormItem>)} />
         <FormField control={form.control} name="imageUrl" render={({ field }) => (<FormItem> <FormLabel>URL de la Imagen</FormLabel> <FormControl><Input {...field} name="imageUrl" /></FormControl> <FormMessage /> </FormItem>)} />
@@ -129,6 +131,7 @@ const teamMemberSchema = z.object({
   }),
   isAvailable: z.boolean().default(true),
   role: z.string(),
+  whatsapp: z.string().optional().or(z.literal("")),
 });
 
 type TeamMemberFormData = z.infer<typeof teamMemberSchema>;
@@ -140,7 +143,7 @@ function EditTeamMemberForm({ member, onFormSubmit, onOpenChange }: { member: Te
 
   const form = useForm<TeamMemberFormData>({
     resolver: zodResolver(teamMemberSchema),
-    defaultValues: { ...member, email: member.email ?? "" },
+    defaultValues: { ...member, email: member.email ?? "", whatsapp: member.whatsapp ?? "" },
   });
 
   React.useEffect(() => {
@@ -173,6 +176,7 @@ function EditTeamMemberForm({ member, onFormSubmit, onOpenChange }: { member: Te
         <input type="hidden" name="id" value={form.getValues("id")} />
         <FormField control={form.control} name="name" render={({ field }) => (<FormItem> <FormLabel>Nombre</FormLabel> <FormControl><Input {...field} name="name" /></FormControl> <FormMessage /> </FormItem>)} />
         <FormField control={form.control} name="email" render={({ field: { value, ...field } }) => (<FormItem> <FormLabel>Email (para notificaciones)</FormLabel> <FormControl><Input {...field} value={value ?? ""} name="email" type="email" placeholder="ejemplo@email.com" /></FormControl> <FormMessage /> </FormItem>)} />
+        <FormField control={form.control} name="whatsapp" render={({ field: { value, ...field } }) => (<FormItem> <FormLabel>WhatsApp (opcional, ej. 573001234567)</FormLabel> <FormControl><Input {...field} value={value ?? ""} name="whatsapp" type="tel" placeholder="Código de país + número (solo dígitos)" /></FormControl> <FormMessage /> </FormItem>)} />
         <FormField control={form.control} name="role" render={({ field }) => (<FormItem> <FormLabel>Rol</FormLabel> <FormControl><Input {...field} name="role" /></FormControl> <FormMessage /> </FormItem>)} />
         <FormField control={form.control} name="description" render={({ field }) => (<FormItem> <FormLabel>Descripción</FormLabel> <FormControl><Textarea {...field} name="description" /></FormControl> <FormMessage /> </FormItem>)} />
         <FormField control={form.control} name="imageUrl" render={({ field }) => (<FormItem> <FormLabel>URL de la Imagen</FormLabel> <FormControl><Input {...field} name="imageUrl" /></FormControl> <FormMessage /> </FormItem>)} />
@@ -217,6 +221,36 @@ export default function TeamPage() {
   const [openDialogs, setOpenDialogs] = React.useState<Record<string, boolean>>({});
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false);
   const { toast } = useToast();
+
+  const dragItem = React.useRef<number | null>(null);
+  const dragOverItem = React.useRef<number | null>(null);
+
+  const handleSort = async () => {
+    if (dragItem.current === null || dragOverItem.current === null) return;
+    if (dragItem.current === dragOverItem.current) {
+        dragItem.current = null;
+        dragOverItem.current = null;
+        return;
+    }
+
+    const _team = [...team];
+    const draggedItemContent = _team.splice(dragItem.current, 1)[0];
+    _team.splice(dragOverItem.current, 0, draggedItemContent);
+
+    dragItem.current = null;
+    dragOverItem.current = null;
+
+    setTeam(_team);
+
+    const ordersToSave = _team.map((m, index) => ({ id: m.id, order: index }));
+    const result = await updateTeamOrder(ordersToSave);
+    if (!result.success) {
+        toast({ title: 'Error', description: result.message, variant: 'destructive' });
+        fetchData();
+    } else {
+        toast({ title: 'Orden actualizado', description: 'El orden de los barberos se ha guardado correctamente.' });
+    }
+  };
 
   const fetchData = React.useCallback(async () => {
     setIsLoading(true);
@@ -295,8 +329,18 @@ export default function TeamPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {team.map((member) => (
-          <Card key={member.id}>
+        {team.map((member, index) => (
+          <div
+            key={member.id}
+            draggable
+            onDragStart={() => (dragItem.current = index)}
+            onDragEnter={() => (dragOverItem.current = index)}
+            onDragEnd={handleSort}
+            onDragOver={(e) => e.preventDefault()}
+            className="cursor-move h-full"
+            title="Arrastra para reordenar"
+          >
+          <Card className="h-full hover:border-primary/50 transition-colors">
             <CardHeader className="flex flex-row items-center gap-4">
               <div className="relative h-16 w-16 min-w-[64px]">
                 <Image
@@ -350,6 +394,7 @@ export default function TeamPage() {
               </div>
             </CardContent>
           </Card>
+          </div>
         ))}
       </div>
     </div>

@@ -54,10 +54,11 @@ interface ConfirmationStepProps {
     serviceName: string;
     date: string;
     time: string;
+    whatsappUrl?: string;
     onBookAnother: () => void;
 }
 
-export function ConfirmationStep({ barberName, serviceName, date, time, onBookAnother }: ConfirmationStepProps) {
+export function ConfirmationStep({ barberName, serviceName, date, time, whatsappUrl, onBookAnother }: ConfirmationStepProps) {
   
   const handleDirections = () => {
     const barbershopAddress = "Calle 22N #6A-30 Ciudad Jardín, Popayán, Cauca, Colombia";
@@ -80,7 +81,16 @@ export function ConfirmationStep({ barberName, serviceName, date, time, onBookAn
         <p className="mt-2 text-sm text-muted-foreground">
             Recibirás un correo electrónico con los detalles. ¡Te esperamos!
         </p>
-        <div className="flex flex-col sm:flex-row gap-4 mt-8">
+        <div className="flex flex-col sm:flex-row gap-4 mt-8 flex-wrap justify-center">
+            {whatsappUrl && (
+                <Button 
+                    variant="outline" 
+                    onClick={() => window.open(whatsappUrl, "_blank", "noopener,noreferrer")}
+                    className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
+                >
+                    Abrir WhatsApp
+                </Button>
+            )}
             <Button onClick={handleDirections} variant="secondary">
                 <LocateFixed className="mr-2 h-4 w-4" />
                 Cómo llegar
