@@ -31,6 +31,7 @@ import {
 import {
     Dialog,
     DialogContent,
+    DialogDescription,
     DialogHeader,
     DialogTitle,
     DialogTrigger,
@@ -113,11 +114,12 @@ export default function NotificationsPage() {
 
     React.useEffect(() => {
         const sessionAuth = sessionStorage.getItem('isAdminAuthenticated');
-        if (sessionAuth !== 'true') {
+        const sessionRole = sessionStorage.getItem('userRole');
+        if (sessionAuth !== 'true' || sessionRole !== 'admin') {
             window.location.href = '/admin';
-        } else {
-            fetchData();
+            return;
         }
+        fetchData();
     }, [fetchData]);
 
     React.useEffect(() => {

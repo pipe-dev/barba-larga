@@ -13,6 +13,20 @@
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   font-family: inherit;
+  -webkit-touch-callout: none;
+}
+
+/* Prevent text selection while dragging on mobile */
+.cal-root.is-dragging {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+.cal-root.is-dragging * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
 }
 
 /* ─── Toolbar ────────────────────────────────────────────── */
@@ -342,6 +356,24 @@
   line-height: 1.2;
 }
 
+.cal-chip-time {
+  font-size: 0.6rem;
+  font-weight: 500;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.cal-chip-time-inline {
+  font-size: 0.58rem;
+  font-weight: 500;
+  opacity: 0.65;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .cal-chip-completed-badge {
   position: absolute;
   top: 3px;
@@ -377,15 +409,18 @@
   opacity: 1;
 }
 
-/* ─── Dragging State ─────────────────────────────────────── */
+/* ─── Dragging State ───────────────────────────────────── */
 .cal-event-chip.dragging {
-  opacity: 0.35;
-  transform: scale(0.97);
-  box-shadow: none;
+  opacity: 0.5;
+  background: rgba(var(--chip-rgb), 0.25);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .cal-event-chip[draggable="true"] {
   cursor: grab;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .cal-event-chip[draggable="true"]:active {
@@ -398,23 +433,11 @@
   left: 2px;
   right: 2px;
   border-radius: 6px;
-  border: 2px dashed var(--chip-color);
-  background: rgba(var(--chip-rgb), 0.08);
+  border: 2px solid var(--chip-color);
+  background: rgba(var(--chip-rgb), 0.2);
   z-index: 4;
   pointer-events: none;
-  animation: cal-ghost-pulse 1s ease-in-out infinite;
-}
-
-@keyframes cal-ghost-pulse {
-
-  0%,
-  100% {
-    opacity: 0.6;
-  }
-
-  50% {
-    opacity: 1;
-  }
+  box-shadow: 0 2px 8px rgba(var(--chip-rgb), 0.25);
 }
 
 /* ─── Drop Active Column ─────────────────────────────────── */

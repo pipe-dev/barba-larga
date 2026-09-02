@@ -8,11 +8,16 @@ import { db } from "@/lib/firebase";
 import { collection, addDoc, doc, getDoc, updateDoc, deleteDoc, query, where, getDocs, orderBy, limit, Timestamp, runTransaction, setDoc, writeBatch } from "firebase/firestore";
 import { format, parse, parseISO, compareAsc, addHours, subDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isToday as isTodayDateFns, isWithinInterval, differenceInDays, subMonths, getDay, addDays, lastDayOfMonth } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
-import { services as allServices, getServiceDetails } from '@/lib/data';
+import { getServiceDetails, timeToMinutes, minutesToTimeStr, doIntervalsOverlap, getServiceDuration, MIN_GAP_MINUTES } from '@/lib/data';
+import { getServicesFromDB } from '@/app/actions/services';
 import { es } from 'date-fns/locale';
 import nodemailer from 'nodemailer';
 import path from 'path';
 import { headers } from 'next/headers';
+import { setAuthCookie, clearAuthCookie, requireAdminSession, requireAuthSession, getServerSession } from '@/lib/auth';
+import { logSystemEvent, SystemLog } from '@/lib/telemetry';
+
+export type { SystemLog } from '@/lib/telemetry';
 
 const bookingSchema = z.object({
     id: z.string().optional(), // For updates
@@ -34,6 +39,13 @@ const blockTimeSchema = z.object({
     endTime: z.string({ required_error: "Por favor, selecciona una hora de fin." }),
     name: z.string().min(3, { message: "La descripción es muy corta." }),
     recurrence: z.enum(["none", "weekly", "daily"]).default("none"),
+}).refine(data => {
+    const start = timeToMinutes(data.time);
+    const end = timeToMinutes(data.endTime);
+    return start !== -1 && end !== -1 && end > start;
+}, {
+    message: "La hora de fin debe ser posterior a la hora de inicio.",
+    path: ["endTime"],
 });
 
 
@@ -73,7 +85,10 @@ const notificationSchema = z.object({
 
 // Static fallback for barber emails to ensure reliability
 const staticBarberEmails: { [key: string]: string } = {
+    "alan": "stuntpk123@gmail.com",
     "alan-martinez": "stuntpk123@gmail.com",
+    "jose-samudio": "Jjoseadrian261103@gmail.com",
+    "juan-pablo-castillo": "juancastillo723777@gmail.com",
 };
 
 
@@ -106,6 +121,34 @@ export async function blockTimeSlot(prevState: any, formData: FormData) {
     }
 
     try {
+        // Validate that blocking does not collide with existing client appointments
+        const startMin = timeToMinutes(time);
+        const endMin = timeToMinutes(endTime);
+
+        const dayAppointmentsQuery = query(
+            collection(db, "appointments"),
+            where("barberId", "==", barberId),
+            where("date", "==", date)
+        );
+        const existingSnapshot = await getDocs(dayAppointmentsQuery);
+        const hasConflict = existingSnapshot.docs.some(docSnap => {
+            if (docSnap.id.startsWith('lock_')) return false;
+            const apt = docSnap.data();
+            if (apt.type === 'lock' || apt.status === 'cancelled') return false;
+            if (!apt.time) return false;
+            const aptStart = timeToMinutes(apt.time);
+            if (aptStart === -1) return false;
+            let aptEnd = apt.endTime ? timeToMinutes(apt.endTime) : aptStart + 60;
+            return doIntervalsOverlap(startMin, endMin, aptStart, aptEnd);
+        });
+
+        if (hasConflict && recurrence === 'none') {
+            return {
+                success: false,
+                message: "No puedes bloquear este horario porque ya existe una cita programada con un cliente en este intervalo."
+            };
+        }
+
         const batch = writeBatch(db);
         // Fix: Use parse instead of parseISO to treat "yyyy-MM-dd" as local time, 
         // preventing UTC offset from shifting the date to previous day.
@@ -168,7 +211,27 @@ export async function blockTimeSlot(prevState: any, formData: FormData) {
 // In-memory store for rate limiting
 const ipRequestStore: Map<string, number[]> = new Map();
 const RATE_LIMIT_WINDOW = 60 * 60 * 1000; // 1 hour in milliseconds
-const MAX_REQUESTS_PER_WINDOW = 5; // Allow 5 attempts per hour
+const MAX_REQUESTS_PER_WINDOW = 20; // Allow 20 attempts per hour
+
+function parseSafeDate(rawDate: any): Date {
+    if (!rawDate) return new Date();
+    if (typeof rawDate?.toDate === 'function') {
+        try {
+            const d = rawDate.toDate();
+            if (d instanceof Date && !isNaN(d.getTime())) return d;
+        } catch (e) {
+            // fallback
+        }
+    }
+    if (rawDate instanceof Date && !isNaN(rawDate.getTime())) {
+        return rawDate;
+    }
+    if (typeof rawDate === 'string' || typeof rawDate === 'number') {
+        const d = new Date(rawDate);
+        if (!isNaN(d.getTime())) return d;
+    }
+    return new Date();
+}
 
 function checkRateLimit(ip: string): boolean {
     const now = Date.now();
@@ -188,11 +251,17 @@ function checkRateLimit(ip: string): boolean {
     return true; // Request is within limits
 }
 
+function sanitizeInput(str: any): string {
+    if (typeof str !== 'string') return '';
+    return str.replace(/<[^>]*>?/gm, '').trim();
+}
+
 export async function bookAppointment(prevState: any, formData: FormData) {
     const headersList = await headers();
 
     // Rate Limiting Check
-    const ip = headersList.get('x-forwarded-for') ?? '127.0.0.1';
+    const rawIp = headersList.get('x-forwarded-for')?.split(',')[0] || headersList.get('x-real-ip') || '127.0.0.1';
+    const ip = rawIp.trim();
     if (!checkRateLimit(ip)) {
         return {
             success: false,
@@ -220,12 +289,16 @@ export async function bookAppointment(prevState: any, formData: FormData) {
         };
     }
 
-    const { name, email: clientEmail, phone, service: serviceIds, date, time, barberId } = validatedFields.data;
+    const { name: rawName, email: rawClientEmail, phone: rawPhone, service: serviceIds, date, time, barberId } = validatedFields.data;
+    const name = sanitizeInput(rawName);
+    const clientEmail = sanitizeInput(rawClientEmail);
+    const phone = sanitizeInput(rawPhone);
 
     const newAppointmentRef = doc(collection(db, "appointments"));
-    let whatsappUrl: string | undefined = undefined;
-
     try {
+        const dbServices = await getServicesFromDB();
+        const activeServices = dbServices || [];
+
         await runTransaction(db, async (transaction) => {
             const team = await getTeam();
             const barber = team.find(b => b.id === barberId);
@@ -234,61 +307,75 @@ export async function bookAppointment(prevState: any, formData: FormData) {
                 throw new Error("El barbero seleccionado no es válido.");
             }
 
-            // Calculate duration
-            const serviceIdsArray = serviceIds.split(',');
-            const selectedServices = allServices.filter(s => serviceIdsArray.includes(s.id));
-            const totalDuration = selectedServices.reduce((acc, s) => acc + s.duration, 0);
+            // Calculate duration safely using dynamic services
+            const totalDuration = getServiceDuration(serviceIds, activeServices);
 
-            // Calculate endTime
-            // time is "08:00 AM" format
-            const startTimeDate = parse(time, "hh:mm a", new Date());
-            // Add duration minutes
-            const endTimeDate = new Date(startTimeDate.getTime() + totalDuration * 60000);
-            const endTime = format(endTimeDate, "hh:mm a");
+            // Calculate start and end minutes
+            const newStart = timeToMinutes(time);
+            if (newStart === -1) {
+                throw new Error("El formato de hora de la cita no es válido.");
+            }
 
-            const appointmentsQuery = query(
-                collection(db, "appointments"),
-                where("barberId", "==", barberId),
-                where("date", "==", date),
-                // Initial check, but real validation happens below
-                // We need to check if ANY existing appointment overlaps with this new one
-                // Or if this new one overlaps with ANY existing one
-            );
+            const newEnd = newStart + totalDuration;
+            const endTime = minutesToTimeStr(newEnd);
 
-            // Since firestore filtering for overlap is hard with just equality checks, 
-            // we fetch all appointments for that day and barber, then check overlap in memory.
-            // This is safer and prevents overbooking.
+            // Validate business hours (8:00 AM = 480 min, 9:00 PM = 1260 min)
+            if (newStart < 480) {
+                throw new Error("La cita es anterior al horario de apertura (8:00 AM).");
+            }
+            if (newEnd > 1260) {
+                throw new Error("La cita excede el horario de cierre (9:00 PM). Por favor elige un horario más temprano.");
+            }
+
+            // Validate that the appointment date and time is not in the past (America/Bogota timezone)
+            const bogotaDateStr = formatInTimeZone(new Date(), "America/Bogota", "yyyy-MM-dd");
+            const bogotaTimeStr = new Date().toLocaleTimeString("en-US", { timeZone: "America/Bogota", hour12: false });
+            const [bH, bM] = bogotaTimeStr.split(":").map(Number);
+            const bogotaCurrentMinutes = (bH || 0) * 60 + (bM || 0);
+
+            if (date < bogotaDateStr) {
+                throw new Error("No puedes agendar citas en fechas pasadas.");
+            }
+            if (date === bogotaDateStr && newStart <= bogotaCurrentMinutes) {
+                throw new Error("No puedes agendar una cita en un horario que ya ha pasado.");
+            }
+
+            // Create a lock document reference for this specific day and barber
+            // Reading and writing to this lock forces Firestore to retry the transaction 
+            // if another client books concurrently, solving the double-booking race condition.
+            // We use the 'appointments' collection to avoid permission errors.
+            const lockRef = doc(db, "appointments", `lock_${barberId}_${date}`);
+            const lockDoc = await transaction.get(lockRef);
+
             const dayAppointmentsQuery = query(
                 collection(db, "appointments"),
                 where("barberId", "==", barberId),
                 where("date", "==", date)
             );
 
+            // getDocs is not isolated in Web SDK transactions, but because we modify the lockRef,
+            // the transaction will retry if another booking happens at the exact same time.
             const existingAppointmentsSnapshot = await getDocs(dayAppointmentsQuery);
-
-            const timeToMinutes = (t: string) => {
-                const d = parse(t, "hh:mm a", new Date());
-                return d.getHours() * 60 + d.getMinutes();
-            }
-
-            const newStart = timeToMinutes(time);
-            const newEnd = timeToMinutes(endTime);
-
-            // Validate that newEnd doesn't exceed 9:00 PM (21:00)
-            // 9:00 PM is 21 * 60 = 1260
-            if (newEnd > 1260) {
-                throw new Error("La cita excede el horario de cierre (9:00 PM). Por favor elige un horario más temprano.");
-            }
 
             let isOverlapping = false;
 
-            existingAppointmentsSnapshot.docs.forEach(doc => {
-                const apt = doc.data();
-                const aptStart = timeToMinutes(apt.time);
-                let aptEnd = apt.endTime ? timeToMinutes(apt.endTime) : aptStart + 60; // Default to 60 mins if no endTime
+            existingAppointmentsSnapshot.docs.forEach(docSnap => {
+                if (docSnap.id.startsWith('lock_')) return;
+                const apt = docSnap.data();
+                if (apt.type === 'lock') return;
+                if (apt.status === 'cancelled') return;
+                if (!apt.time) return;
 
-                // Standard overlap check: (StartA < EndB) && (EndA > StartB)
-                if (newStart < aptEnd && newEnd > aptStart) {
+                const aptStart = timeToMinutes(apt.time);
+                if (aptStart === -1) return;
+
+                let aptEnd = apt.endTime ? timeToMinutes(apt.endTime) : -1;
+                if (aptEnd === -1 || aptEnd <= aptStart) {
+                    aptEnd = aptStart + getServiceDuration(apt.service || '', activeServices);
+                }
+
+                // Infallible interval overlap check: max(StartA, StartB) < min(EndA, EndB)
+                if (doIntervalsOverlap(newStart, newEnd, aptStart, aptEnd)) {
                     isOverlapping = true;
                 }
             });
@@ -315,6 +402,11 @@ export async function bookAppointment(prevState: any, formData: FormData) {
             };
 
             transaction.set(newAppointmentRef, appointmentPayload);
+            // Update the lock to trigger concurrency control
+            transaction.set(lockRef, { 
+                type: 'lock', 
+                lastUpdated: new Date() 
+            }, { merge: true });
 
             // Create or update customer profile
             if (clientEmail) {
@@ -350,31 +442,34 @@ export async function bookAppointment(prevState: any, formData: FormData) {
         const barber = team.find(b => b.id === barberId);
         if (!barber) throw new Error("Barber not found.");
 
-        const serviceIdsArray = serviceIds!.split(',');
-        const chosenServices = allServices.filter(s => serviceIdsArray.includes(s.id));
-        const serviceNames = chosenServices.map(s => s.name).join(', ');
-        const totalDuration = chosenServices.reduce((total, s) => total + s.duration, 0);
-        const totalPrice = chosenServices.reduce((total, s) => total + parseInt(s.price), 0);
+        const { names: serviceNames, totalPrice, totalDuration } = getServiceDetails(serviceIds!, activeServices);
         const formattedDate = format(parse(date, "yyyy-MM-dd", new Date()), "EEEE, d 'de' LLLL 'de' yyyy", { locale: es });
         const barbershopAddress = "Calle 22N #6A-30 Ciudad Jardín, Popayán, Cauca, Colombia";
         const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(barbershopAddress)}`;
         
+        let whatsappUrl: string | undefined = undefined;
         if (barber.whatsapp) {
+            let cleanNumber = barber.whatsapp.replace(/\D/g, '');
+            if (cleanNumber.length === 10) {
+                cleanNumber = '57' + cleanNumber;
+            }
             const formattedPrice = totalPrice.toLocaleString('es-CO');
             const waMessage = `¡Hola ${barber.name}! Acabo de agendar una cita contigo en Barba Larga.\n\n*Detalles de la cita:*\n👤 *Cliente:* ${name}\n📅 *Fecha:* ${date}\n⏰ *Hora:* ${time}\n✂️ *Servicios:* ${serviceNames}\n⏱ *Duración estimada:* ${totalDuration} min\n💰 *Total:* $${formattedPrice}\n\n¡Nos vemos pronto!`;
-            whatsappUrl = `https://api.whatsapp.com/send?phone=${barber.whatsapp}&text=${encodeURIComponent(waMessage)}`;
+            whatsappUrl = `https://api.whatsapp.com/send?phone=${cleanNumber}&text=${encodeURIComponent(waMessage)}`;
         } else {
             whatsappUrl = "https://wa.link/rxl87s"; // Fallback if barber has no whatsapp
         }
 
         // --- Email Sending Logic ---
-        const GMAIL_USER = process.env.GMAIL_USER || 'citasbarbalarga@gmail.com';
+        const GMAIL_USER = process.env.GMAIL_USER || 'barbalargacitas@gmail.com';
         const GMAIL_APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s/g, '');
 
         if (GMAIL_USER && GMAIL_APP_PASSWORD) {
             try {
                 const transporter = nodemailer.createTransport({
-                    service: 'gmail',
+                    host: 'smtp.gmail.com',
+                    port: 465,
+                    secure: true,
                     auth: {
                         user: GMAIL_USER,
                         pass: GMAIL_APP_PASSWORD,
@@ -513,6 +608,20 @@ Total: $${totalPrice.toLocaleString('es-CO')}`;
 
             } catch (emailError) {
                 console.error("Error sending email(s) via Nodemailer:", emailError);
+                await logSystemEvent({
+                    level: 'critical',
+                    source: 'email',
+                    action: 'sendAppointmentConfirmationEmail',
+                    message: `Fallo al enviar correo de confirmación de cita a ${clientEmail || 'cliente'}`,
+                    error: emailError,
+                    metadata: {
+                        clientName: name,
+                        clientEmail,
+                        barberName: barber.name,
+                        date,
+                        time,
+                    }
+                });
                 if (newAppointmentRef.path) {
                     await updateDoc(newAppointmentRef, {
                         adminNotes: `Failed to send email notification. Error: ${emailError instanceof Error ? emailError.message : String(emailError)}`
@@ -525,8 +634,6 @@ Total: $${totalPrice.toLocaleString('es-CO')}`;
             });
         }
 
-
-
         const successMessage = `¡Reserva confirmada! Tu cita para el ${date} a las ${time} ha sido agendada.`;
 
         return {
@@ -537,6 +644,21 @@ Total: $${totalPrice.toLocaleString('es-CO')}`;
     } catch (error) {
         console.error("Error booking appointment:", error);
         const errorMessage = error instanceof Error ? error.message : "Ocurrió un error desconocido.";
+        await logSystemEvent({
+            level: 'error',
+            source: 'backend',
+            action: 'bookAppointment',
+            message: `Fallo al agendar cita: ${errorMessage}`,
+            error,
+            metadata: {
+                name,
+                clientEmail,
+                phone,
+                date,
+                time,
+                barberId
+            }
+        });
         return {
             success: false,
             message: `Ocurrió un error al procesar la solicitud. ${errorMessage}`
@@ -552,13 +674,12 @@ export async function deleteAppointment(appointmentId: string): Promise<{ succes
         await runTransaction(db, async (transaction) => {
             const appointmentRef = doc(db, "appointments", appointmentId);
 
-            // Find and delete the associated transaction if it exists
+            // Find and delete all associated transactions if any exist
             const transactionsQuery = query(collection(db, "transactions"), where("appointmentId", "==", appointmentId));
             const transactionsSnapshot = await getDocs(transactionsQuery);
-            if (!transactionsSnapshot.empty) {
-                const transactionDoc = transactionsSnapshot.docs[0];
-                transaction.delete(transactionDoc.ref);
-            }
+            transactionsSnapshot.docs.forEach(tDoc => {
+                transaction.delete(tDoc.ref);
+            });
 
             // Delete the appointment
             transaction.delete(appointmentRef);
@@ -631,14 +752,12 @@ export async function reactivateAppointment(appointmentId: string): Promise<{ su
                 throw new Error("Solo se pueden reactivar citas completadas.");
             }
 
-            // Find and delete the associated transaction
+            // Find and delete all associated transactions
             const transactionsQuery = query(collection(db, "transactions"), where("appointmentId", "==", appointmentId));
             const transactionsSnapshot = await getDocs(transactionsQuery);
-
-            if (!transactionsSnapshot.empty) {
-                const transactionDoc = transactionsSnapshot.docs[0];
-                transaction.delete(transactionDoc.ref);
-            }
+            transactionsSnapshot.docs.forEach(tDoc => {
+                transaction.delete(tDoc.ref);
+            });
 
             // Update the appointment status
             transaction.update(appointmentRef, { status: 'pending' });
@@ -653,8 +772,12 @@ export async function reactivateAppointment(appointmentId: string): Promise<{ su
     }
 }
 
-export async function getAvailableTimesForDate(dateString: string, barberId: string): Promise<{ blocked: string[], gaps: string[] }> {
-    if (!dateString || !barberId) return { blocked: [], gaps: [] };
+export async function getAvailableTimesForDate(dateString: string, barberId: string): Promise<{ 
+    blocked: string[]; 
+    gaps: string[]; 
+    intervals: { startMin: number; endMin: number }[] 
+}> {
+    if (!dateString || !barberId) return { blocked: [], gaps: [], intervals: [] };
 
     try {
         const appointmentsCol = collection(db, 'appointments');
@@ -666,39 +789,16 @@ export async function getAvailableTimesForDate(dateString: string, barberId: str
 
         const querySnapshot = await getDocs(q);
         const blockedMinutes = new Set<number>();
+        const appointments: { startMin: number; endMin: number }[] = [];
 
-        // Helper to convert "hh:mm a" or "hh:mmAM/PM" to total minutes since midnight
-        const timeToMinutes = (time12h: string): number => {
-            if (!time12h) return -1;
-            const normalized = time12h.trim().toUpperCase();
-            const match = normalized.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
-            if (!match) return -1;
-            let hours = parseInt(match[1], 10);
-            const minutes = parseInt(match[2], 10);
-            const modifier = match[3];
-            if (modifier === 'PM' && hours < 12) hours += 12;
-            if (modifier === 'AM' && hours === 12) hours = 0;
-            return hours * 60 + minutes;
-        };
-
-        // Helper to convert total minutes to "HH:MM AM/PM" format (with space for display)
-        const minutesToTimeStr = (totalMins: number): string => {
-            const h24 = Math.floor(totalMins / 60);
-            const m = totalMins % 60;
-            const ampm = h24 >= 12 ? 'PM' : 'AM';
-            let h12 = h24 % 12;
-            if (h12 === 0) h12 = 12;
-            return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
-        };
-
-        const INTERVAL = 10; // Must match SLOT_INTERVAL_MINUTES from data.ts
-        const MIN_GAP = 20;  // Must match MIN_GAP_MINUTES from data.ts
-
-        // Collect all appointment intervals
-        const appointments: { startMin: number, endMin: number }[] = [];
+        const dbServices = await getServicesFromDB();
+        const activeServices = dbServices || [];
 
         querySnapshot.docs.forEach((docSnap) => {
+            if (docSnap.id.startsWith('lock_')) return;
             const data = docSnap.data();
+            if (data.type === 'lock') return;
+            if (data.status === 'cancelled') return;
 
             if (data.time) {
                 const startMin = timeToMinutes(data.time);
@@ -707,18 +807,20 @@ export async function getAvailableTimesForDate(dateString: string, barberId: str
                 let endMin: number;
                 if (data.endTime) {
                     endMin = timeToMinutes(data.endTime);
-                    if (endMin === -1) endMin = startMin + 60;
+                    if (endMin === -1 || endMin <= startMin) {
+                        endMin = startMin + getServiceDuration(data.service || '', activeServices);
+                    }
                 } else {
-                    endMin = startMin + 60; // Legacy fallback
+                    endMin = startMin + getServiceDuration(data.service || '', activeServices);
                 }
 
                 appointments.push({ startMin, endMin });
 
-                // Block every INTERVAL-minute slot within [startMin, endMin)
-                const firstBlocked = Math.floor(startMin / INTERVAL) * INTERVAL;
-                const lastBlocked = Math.ceil(endMin / INTERVAL) * INTERVAL;
+                // Block every 10-minute slot within [startMin, endMin) for basic UI helpers
+                const firstBlocked = Math.floor(startMin / 10) * 10;
+                const lastBlocked = Math.ceil(endMin / 10) * 10;
 
-                for (let t = firstBlocked; t < lastBlocked; t += INTERVAL) {
+                for (let t = firstBlocked; t < lastBlocked; t += 10) {
                     blockedMinutes.add(t);
                 }
             }
@@ -732,33 +834,36 @@ export async function getAvailableTimesForDate(dateString: string, barberId: str
             }
         });
 
-        // Compute smart gap slots
-        // For each appointment, check if it ends mid-hour with > MIN_GAP remaining
+        // Compute smart gap slots against exact continuous intervals
         const gapSet = new Set<string>();
+        const MIN_GAP = MIN_GAP_MINUTES || 20;
+
         for (const apt of appointments) {
-            const endMin = apt.endMin;
-            // Only create gap if the appointment doesn't end exactly on the hour
-            if (endMin % 60 !== 0) {
-                const nextHour = Math.ceil(endMin / 60) * 60;
-                const remaining = nextHour - endMin;
-                // Only show gap if remaining time is MORE than MIN_GAP minutes
-                if (remaining > MIN_GAP) {
-                    // Check that this gap time is NOT blocked by another appointment
-                    if (!blockedMinutes.has(endMin)) {
-                        // Check it's within business hours (8 AM to 8:50 PM)
-                        if (endMin >= 8 * 60 && endMin <= 20 * 60 + 50) {
-                            gapSet.add(minutesToTimeStr(endMin));
-                        }
+            const gapStart = apt.endMin;
+            // Only consider gaps within operating hours (8:00 AM to 8:50 PM)
+            if (gapStart >= 8 * 60 && gapStart <= 20 * 60 + 50) {
+                // Check that gapStart does NOT fall inside any other appointment
+                const isOverlapping = appointments.some(other => gapStart >= other.startMin && gapStart < other.endMin);
+                if (!isOverlapping) {
+                    // Check if there is at least MIN_GAP minutes before the next appointment or closing time (9:00 PM = 1260)
+                    const laterApts = appointments.filter(a => a.startMin > gapStart).sort((a, b) => a.startMin - b.startMin);
+                    const nextBoundary = laterApts.length > 0 ? laterApts[0].startMin : 1260;
+                    if (nextBoundary - gapStart >= MIN_GAP) {
+                        gapSet.add(minutesToTimeStr(gapStart));
                     }
                 }
             }
         }
 
-        return { blocked, gaps: Array.from(gapSet) };
+        return { 
+            blocked, 
+            gaps: Array.from(gapSet), 
+            intervals: appointments 
+        };
 
     } catch (error) {
         console.error('Error fetching booked times from Firestore:', error);
-        return { blocked: [], gaps: [] };
+        return { blocked: [], gaps: [], intervals: [] };
     }
 }
 
@@ -778,17 +883,13 @@ export type Appointment = {
     type: 'appointment' | 'blocked';
 };
 
-const convertTimeTo24Hour = (time: string) => {
+const convertTimeTo24Hour = (time: string): string => {
     if (!time) return "00:00";
-    const [timePart, modifier] = time.split(' ');
-    let [hours, minutes] = timePart.split(':');
-    if (hours === '12') {
-        hours = '00';
-    }
-    if (modifier && modifier.toUpperCase() === 'PM') {
-        hours = (parseInt(hours, 10) + 12).toString();
-    }
-    return `${hours.padStart(2, '0')}:${minutes}`;
+    const min = timeToMinutes(time);
+    if (min === -1) return "00:00";
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 };
 
 export async function getAllAppointments(): Promise<Appointment[]> {
@@ -803,20 +904,22 @@ export async function getAllAppointments(): Promise<Appointment[]> {
 
         const querySnapshot = await getDocs(q);
 
-        const appointments = querySnapshot.docs.map(doc => {
+        const appointments = querySnapshot.docs
+            .filter(doc => !doc.id.startsWith('lock_') && doc.data().type !== 'lock' && !!doc.data().date && !!doc.data().time)
+            .map(doc => {
             const data = doc.data();
-            const createdAtTimestamp = data.createdAt as Timestamp;
+            const createdAtDate = parseSafeDate(data.createdAt);
             return {
                 id: doc.id,
-                name: data.name,
-                email: data.email,
-                phone: data.phone,
-                service: data.service,
+                name: data.name || '',
+                email: data.email || '',
+                phone: data.phone || '',
+                service: data.service || '',
                 date: data.date,
                 time: data.time,
                 endTime: data.endTime,
                 status: data.status || 'pending',
-                createdAt: createdAtTimestamp.toDate().toISOString(),
+                createdAt: createdAtDate.toISOString(),
                 barberId: data.barberId || 'alan-martinez', // Fallback for old appointments
                 barberEmail: data.barberEmail || null,
                 type: data.type || 'appointment',
@@ -853,6 +956,9 @@ export async function confirmAppointmentAsSale(appointmentId: string, paymentMet
     }
 
     try {
+        const dbServices = await getServicesFromDB();
+        const activeServices = dbServices || [];
+
         await runTransaction(db, async (transaction) => {
             const appointmentRef = doc(db, "appointments", appointmentId);
             const appointmentDoc = await transaction.get(appointmentRef);
@@ -867,10 +973,7 @@ export async function confirmAppointmentAsSale(appointmentId: string, paymentMet
                 throw new Error("Esta cita ya ha sido marcada como completada.");
             }
 
-            const serviceIds = appointmentData.service.split(',');
-            const chosenServices = allServices.filter(s => serviceIds.includes(s.id));
-            const serviceNames = chosenServices.map(s => s.name).join(', ');
-            const totalAmount = chosenServices.reduce((total, s) => total + parseInt(s.price.replace(/\D/g, '')), 0);
+            const { names: serviceNames, totalPrice: totalAmount } = getServiceDetails(appointmentData.service, activeServices);
 
             if (totalAmount <= 0) {
                 throw new Error("El monto del servicio es cero o inválido.");
@@ -907,12 +1010,23 @@ export async function verifyAdminPassword(password: string): Promise<{ success: 
     const barberPassword = 'barbersclvb69';
 
     if (password === adminPassword) {
+        await setAuthCookie('admin');
         return { success: true, role: 'admin' };
     }
     if (password === barberPassword) {
+        await setAuthCookie('barber');
         return { success: true, role: 'barber' };
     }
     return { success: false };
+}
+
+export async function logoutAdmin(): Promise<{ success: boolean }> {
+    await clearAuthCookie();
+    return { success: true };
+}
+
+export async function checkAdminSession(): Promise<{ isAuthenticated: boolean; role?: 'admin' | 'barber' }> {
+    return await getServerSession();
 }
 
 
@@ -930,6 +1044,12 @@ export type Transaction = {
 };
 
 export async function addTransaction(prevState: any, formData: FormData) {
+    try {
+        await requireAdminSession();
+    } catch {
+        return { success: false, message: "No autorizado. Requiere permisos de administrador." };
+    }
+
     const validatedFields = transactionSchema.safeParse({
         type: formData.get("type"),
         paymentMethod: formData.get("paymentMethod"),
@@ -1076,7 +1196,7 @@ export async function getRecentTransactions(): Promise<Transaction[]> {
             return {
                 id: doc.id,
                 ...data,
-                date: (data.date as Timestamp).toDate(),
+                date: parseSafeDate(data.date),
             } as Transaction;
         });
 
@@ -1125,7 +1245,7 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
             return {
                 id: doc.id,
                 ...data,
-                date: (data.date as Timestamp).toDate(),
+                date: parseSafeDate(data.date),
             } as Transaction;
         });
 
@@ -1150,34 +1270,36 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
 
 
         transactions.forEach(tx => {
+            const amt = Number(tx.amount) || 0;
             if (tx.type === 'sale') {
                 if (isTodayDateFns(tx.date)) {
-                    todayStats.revenue += tx.amount;
+                    todayStats.revenue += amt;
                     todayStats.salesCount += 1;
                 }
                 if (isWithinInterval(tx.date, weekInterval)) {
-                    thisWeekStats.revenue += tx.amount;
+                    thisWeekStats.revenue += amt;
                     thisWeekStats.salesCount += 1;
                 }
                 if (isWithinInterval(tx.date, monthInterval)) {
-                    thisMonthStats.revenue += tx.amount;
+                    thisMonthStats.revenue += amt;
                     thisMonthStats.salesCount += 1;
                 }
             }
 
             if (tx.type === 'sale') {
-                last30DaysRevenue += tx.amount;
-                revenueByMethod[tx.paymentMethod] = (revenueByMethod[tx.paymentMethod] || 0) + tx.amount;
+                last30DaysRevenue += amt;
+                const method = tx.paymentMethod || 'cash';
+                revenueByMethod[method] = (revenueByMethod[method] || 0) + amt;
             } else {
-                last30DaysExpenses += tx.amount;
+                last30DaysExpenses += amt;
             }
 
             const formattedDate = format(tx.date, "d MMM", { locale: es });
             if (dailyData[formattedDate]) {
                 if (tx.type === 'sale') {
-                    dailyData[formattedDate].revenue += tx.amount;
+                    dailyData[formattedDate].revenue += amt;
                 } else {
-                    dailyData[formattedDate].expenses += tx.amount;
+                    dailyData[formattedDate].expenses += amt;
                 }
             }
         });
@@ -1336,7 +1458,7 @@ export async function getProducts(): Promise<Product[]> {
             return {
                 id: doc.id,
                 ...data,
-                createdAt: (data.createdAt as Timestamp).toDate(),
+                createdAt: parseSafeDate(data.createdAt),
             } as Product;
         });
 
@@ -1448,6 +1570,9 @@ export async function deleteCustomers(customerEmails: string[]): Promise<{ succe
 
 export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
     try {
+        const dbServices = await getServicesFromDB();
+        const activeServices = dbServices || [];
+
         const appointmentsCol = collection(db, "appointments");
         const customersCol = collection(db, "customers");
 
@@ -1504,8 +1629,8 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
                     customersData[email].phone = data.phone || customersData[email].phone;
                 }
 
-                const { names, totalPrice: price } = getServiceDetails(data.service);
-                const createdAtTimestamp = data.createdAt as Timestamp;
+                const { names, totalPrice: price } = getServiceDetails(data.service, activeServices);
+                const createdAtDate = parseSafeDate(data.createdAt);
 
                 customersData[email].appointments.push({
                     name: data.name,
@@ -1520,7 +1645,7 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
                     type: data.type,
                     cost: price,
                     serviceNames: names,
-                    createdAt: createdAtTimestamp.toDate().toISOString(),
+                    createdAt: createdAtDate.toISOString(),
                 });
             }
         });
@@ -1629,6 +1754,12 @@ const newTeamMemberSchema = z.object({
 });
 
 export async function addTeamMember(prevState: any, formData: FormData) {
+    try {
+        await requireAdminSession();
+    } catch {
+        return { success: false, message: "No autorizado. Requiere permisos de administrador." };
+    }
+
     const validatedFields = newTeamMemberSchema.safeParse({
         name: formData.get("name"),
         email: formData.get("email") || null,
@@ -1681,7 +1812,7 @@ export async function addTeamMember(prevState: any, formData: FormData) {
         // Assign default order as last
         const teamCol = collection(db, "team");
         const teamSnap = await getDocs(query(teamCol));
-        const maxOrder = teamSnap.empty ? 0 : Math.max(...teamSnap.docs.map(d => d.data().order ?? 0));
+        const maxOrder = teamSnap.empty ? 0 : Math.max(0, ...teamSnap.docs.map(d => d.data().order ?? 0));
 
         await setDoc(memberRef, {
             name,
@@ -1707,83 +1838,13 @@ const teamMemberSchema = z.object({
     whatsapp: z.string().optional().or(z.literal("")),
 });
 
-const initialTeamData = [
-    {
-        id: "alan-martinez",
-        name: "Alan Martinez",
-        role: "Barbero",
-        email: "stuntpk123@gmail.com",
-        description: "Te brindamos una experiencia única y personalizada 💫💇‍♂️.",
-        imageUrl: "/multimedia/nuestro-equipo-alan.jpg",
-        isAvailable: true,
-        color: "#2563eb", // Blue
-        order: 0,
-    },
-
-    {
-        id: "barba-larga-brand",
-        name: "Barba Larga",
-        role: "Nuestra Filosofía",
-        email: null,
-        description: "Más que una barbería, un lugar donde el estilo y la confianza se forjan con maestría y dedicación.",
-        imageUrl: "/multimedia/logo-barber.jpg",
-        isAvailable: false,
-        color: "#ca8a04", // Gold
-        order: 1,
-    },
-    {
-        id: "new-stylist-female",
-        name: "Próximamente",
-        role: "Estilista",
-        email: null,
-        description: "Una nueva experta en estilo se unirá pronto a nuestro equipo para ofrecerte las últimas tendencias y un cuidado excepcional.",
-        imageUrl: "https://picsum.photos/seed/stylist/600/600",
-        isAvailable: false,
-        color: "#9333ea", // Purple
-        order: 2,
-    },
-    {
-        id: "new-barber-male",
-        name: "Próximamente",
-        role: "Barbero",
-        email: null,
-        description: "Estamos ampliando nuestro equipo con otro talentoso barbero. ¡Mantente atento para conocer a la nueva cara de Barba Larga!",
-        imageUrl: "https://picsum.photos/seed/barber/600/600",
-        isAvailable: false,
-        color: "#dc2626", // Red
-        order: 3,
-    }
-];
-
 export async function getTeam(): Promise<TeamMember[]> {
     try {
         const teamCol = collection(db, "team");
         const querySnapshot = await getDocs(query(teamCol));
 
-        if (querySnapshot.empty) {
-            console.log("Team collection is empty, seeding from static data...");
-            const batch = writeBatch(db);
-            initialTeamData.forEach(member => {
-                const memberRef = doc(db, "team", member.id);
-                batch.set(memberRef, member);
-            });
-            await batch.commit();
-
-            const seededSnapshot = await getDocs(query(teamCol));
-            return seededSnapshot.docs.map(docSnap => ({
-                id: docSnap.id,
-                ...docSnap.data(),
-                email: docSnap.data().email || null,
-                color: docSnap.data().color,
-                whatsapp: docSnap.data().whatsapp || "",
-                order: docSnap.data().order ?? 999,
-            } as TeamMember));
-        }
-
         const team = querySnapshot.docs.map(doc => {
             const data = doc.data();
-            // Fall back to initialTeamData color if Firestore doesn't have one
-            const fallbackColor = initialTeamData.find(m => m.id === doc.id)?.color;
             return {
                 id: doc.id,
                 name: data.name,
@@ -1791,8 +1852,8 @@ export async function getTeam(): Promise<TeamMember[]> {
                 role: data.role,
                 description: data.description,
                 imageUrl: data.imageUrl,
-                isAvailable: data.isAvailable,
-                color: data.color || fallbackColor,
+                isAvailable: data.isAvailable ?? true,
+                color: data.color || '#2563eb',
                 whatsapp: data.whatsapp || "",
                 order: data.order ?? 999,
             } as TeamMember;
@@ -1800,13 +1861,19 @@ export async function getTeam(): Promise<TeamMember[]> {
         return team.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
 
     } catch (error) {
-        console.error('Error fetching team:', error);
+        console.error('Error fetching team from Firestore:', error);
         return [];
     }
 }
 
 
 export async function updateTeamMember(prevState: any, formData: FormData) {
+    try {
+        await requireAdminSession();
+    } catch {
+        return { success: false, message: "No autorizado. Requiere permisos de administrador." };
+    }
+
     const dataToValidate = {
         id: formData.get("id"),
         name: formData.get("name"),
@@ -1853,6 +1920,12 @@ export async function updateTeamMember(prevState: any, formData: FormData) {
 }
 
 export async function toggleTeamMemberAvailability(id: string, isAvailable: boolean): Promise<{ success: boolean, message: string }> {
+    try {
+        await requireAdminSession();
+    } catch {
+        return { success: false, message: "No autorizado. Requiere permisos de administrador." };
+    }
+
     if (!id) {
         return { success: false, message: "ID del colaborador no es válido." };
     }
@@ -1868,6 +1941,12 @@ export async function toggleTeamMemberAvailability(id: string, isAvailable: bool
 
 export async function updateTeamOrder(orders: { id: string, order: number }[]) {
     try {
+        await requireAdminSession();
+    } catch {
+        return { success: false, message: "No autorizado. Requiere permisos de administrador." };
+    }
+
+    try {
         const batch = writeBatch(db);
         orders.forEach(item => {
             const memberRef = doc(db, "team", item.id);
@@ -1882,6 +1961,12 @@ export async function updateTeamOrder(orders: { id: string, order: number }[]) {
 }
 
 export async function deleteTeamMember(memberId: string): Promise<{ success: boolean; message: string }> {
+    try {
+        await requireAdminSession();
+    } catch {
+        return { success: false, message: "No autorizado. Requiere permisos de administrador." };
+    }
+
     if (!memberId) {
         return { success: false, message: "ID del colaborador no es válido." };
     }
@@ -1908,44 +1993,11 @@ export type Notification = {
     createdAt: Date;
 };
 
-const initialNotifications = [
-    {
-        title: "¡Bienvenido a Barba Larga!",
-        description: "Tu estilo, nuestra pasión. Agenda tu cita y vive la experiencia."
-    },
-    {
-        title: "Servicio Premium",
-        description: "Prueba La Experiencia Alfa. El ritual definitivo para el hombre que lo quiere todo."
-    },
-    {
-        title: "Asesor de Estilo IA",
-        description: "¿No sabes qué hacerte? Deja que nuestra IA te recomiende el look perfecto."
-    }
-];
-
 export async function getNotifications(): Promise<Omit<Notification, 'createdAt'>[]> {
     try {
         const notificationsCol = collection(db, "notifications");
         const q = query(notificationsCol, orderBy("createdAt", "desc"));
         const querySnapshot = await getDocs(q);
-
-        if (querySnapshot.empty) {
-            console.log("Notifications collection is empty, seeding from static data...");
-            const batch = writeBatch(db);
-            initialNotifications.forEach(notif => {
-                const docRef = doc(collection(db, "notifications"));
-                batch.set(docRef, { ...notif, createdAt: new Date() });
-            });
-            await batch.commit();
-
-            // Re-fetch after seeding
-            const seededSnapshot = await getDocs(q);
-            return seededSnapshot.docs.map(doc => ({
-                id: doc.id,
-                title: doc.data().title,
-                description: doc.data().description,
-            }));
-        }
 
         return querySnapshot.docs.map(doc => ({
             id: doc.id,
@@ -1954,7 +2006,7 @@ export async function getNotifications(): Promise<Omit<Notification, 'createdAt'
         }));
 
     } catch (error) {
-        console.error('Error fetching notifications:', error);
+        console.error('Error fetching notifications from Firestore:', error);
         return [];
     }
 }
@@ -2030,6 +2082,147 @@ export async function deleteNotification(notificationId: string): Promise<{ succ
     } catch (error) {
         console.error("Error deleting notification:", error);
         return { success: false, message: "Ocurrió un error al eliminar la notificación." };
+    }
+}
+
+// --- Telemetry & System Logs Actions ---
+
+export async function verifyMasterLogsPin(pin: string): Promise<{ success: boolean; message?: string }> {
+    try {
+        await requireAdminSession();
+    } catch {
+        return { success: false, message: 'Acceso no autorizado.' };
+    }
+
+    const MASTER_PIN = process.env.MASTER_LOGS_PIN || '5214';
+    if (pin.trim() === MASTER_PIN) {
+        return { success: true };
+    }
+    return { success: false, message: 'PIN maestro incorrecto.' };
+}
+
+export async function getSystemLogs(): Promise<SystemLog[]> {
+    try {
+        await requireAdminSession();
+    } catch {
+        return [];
+    }
+
+    try {
+        const logsRef = collection(db, 'system_logs');
+        const q = query(logsRef, orderBy('createdAt', 'desc'), limit(200));
+        const snapshot = await getDocs(q);
+
+        return snapshot.docs.map(docSnap => {
+            const data = docSnap.data();
+            let dateObj = new Date();
+            if (data.createdAt instanceof Timestamp) {
+                dateObj = data.createdAt.toDate();
+            } else if (data.createdAt?.toDate) {
+                dateObj = data.createdAt.toDate();
+            } else if (data.createdAt) {
+                dateObj = new Date(data.createdAt);
+            }
+
+            return {
+                id: docSnap.id,
+                level: data.level || 'error',
+                source: data.source || 'backend',
+                action: data.action || 'unknown',
+                message: data.message || '',
+                stackTrace: data.stackTrace || undefined,
+                metadata: data.metadata || {},
+                userAgent: data.userAgent || 'Server',
+                ip: data.ip || '127.0.0.1',
+                createdAt: dateObj,
+                resolved: Boolean(data.resolved),
+            } as SystemLog;
+        });
+    } catch (error) {
+        console.error('Error fetching system logs:', error);
+        return [];
+    }
+}
+
+export async function resolveSystemLog(logId: string): Promise<{ success: boolean; message: string }> {
+    try {
+        await requireAdminSession();
+    } catch {
+        return { success: false, message: 'No autorizado.' };
+    }
+
+    if (!logId) return { success: false, message: 'ID de log no válido.' };
+    try {
+        const logRef = doc(db, 'system_logs', logId);
+        await updateDoc(logRef, { resolved: true });
+        return { success: true, message: 'Log marcado como solucionado.' };
+    } catch (error) {
+        return { success: false, message: 'Error al actualizar el estado del log.' };
+    }
+}
+
+export async function deleteSystemLog(logId: string): Promise<{ success: boolean; message: string }> {
+    try {
+        await requireAdminSession();
+    } catch {
+        return { success: false, message: 'No autorizado.' };
+    }
+
+    if (!logId) return { success: false, message: 'ID de log no válido.' };
+    try {
+        const logRef = doc(db, 'system_logs', logId);
+        await deleteDoc(logRef);
+        return { success: true, message: 'Registro de error eliminado.' };
+    } catch (error) {
+        return { success: false, message: 'Error al eliminar el log.' };
+    }
+}
+
+export async function clearResolvedLogs(): Promise<{ success: boolean; count: number; message: string }> {
+    try {
+        await requireAdminSession();
+    } catch {
+        return { success: false, count: 0, message: 'No autorizado.' };
+    }
+
+    try {
+        const logsRef = collection(db, 'system_logs');
+        const q = query(logsRef, where('resolved', '==', true));
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+            return { success: true, count: 0, message: 'No hay logs solucionados para eliminar.' };
+        }
+
+        const batch = writeBatch(db);
+        snapshot.docs.forEach(docSnap => {
+            batch.delete(docSnap.ref);
+        });
+        await batch.commit();
+
+        return { success: true, count: snapshot.size, message: `${snapshot.size} logs solucionados eliminados.` };
+    } catch (error) {
+        return { success: false, count: 0, message: 'Error al limpiar logs solucionados.' };
+    }
+}
+
+export async function createTestSystemLog(): Promise<{ success: boolean; message: string }> {
+    try {
+        await requireAdminSession();
+        const logId = await logSystemEvent({
+            level: 'info',
+            source: 'backend',
+            action: 'testTelemetryLog',
+            message: 'Registro de prueba generado manualmente desde el panel de diagnóstico.',
+            metadata: {
+                testTriggeredBy: 'admin',
+                timestamp: new Date().toISOString(),
+                environment: process.env.NODE_ENV || 'development'
+            }
+        });
+        return { success: true, message: `Log de prueba generado con ID: ${logId}` };
+    } catch (error) {
+        return { success: false, message: 'Error al generar log de prueba.' };
     }
 }
 

@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBooking } from "@/hooks/use-booking";
 import { useSuccessSound } from "@/hooks/use-success-sound";
 import { useShaverSound } from "@/hooks/use-shaver-sound";
-import { services as allServices, Service, getBaseAvailableTimes, SLOT_INTERVAL_MINUTES } from "@/lib/data";
+import { Service, getBaseAvailableTimes, SLOT_INTERVAL_MINUTES, timeToMinutes, minutesToTimeStr, doIntervalsOverlap } from "@/lib/data";
 import { getServicesFromDB } from "@/app/actions/services";
 import { getSafeImageUrl } from "@/lib/image-validation";
 
@@ -62,11 +62,13 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
   const [date, setDate] = React.useState<Date | undefined>(new Date());
   const [selectedTime, setSelectedTime] = React.useState<string | undefined>();
   const [bookedTimes, setBookedTimes] = React.useState<string[]>([]);
+  const [bookedIntervals, setBookedIntervals] = React.useState<{ startMin: number; endMin: number }[]>([]);
   const [gapSlots, setGapSlots] = React.useState<string[]>([]);
   const [isFetchingTimes, setIsFetchingTimes] = React.useState(false);
+  const [validatingTime, setValidatingTime] = React.useState<string | null>(null);
   const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
   const [team, setTeam] = React.useState<TeamMember[]>([]);
-  const [services, setServices] = React.useState<Service[]>(allServices); // Initialize with static services
+  const [services, setServices] = React.useState<Service[]>([]);
 
   const playClickSound = useBookingClickSound();
   const playShaverSound = useShaverSound();
@@ -78,7 +80,7 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
   React.useEffect(() => {
     async function fetchTeam() {
       const teamData = await getTeam();
-      setTeam(teamData);
+      setTeam(teamData || []);
     }
     fetchTeam();
   }, []);
@@ -88,26 +90,10 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
       try {
         const dbServices = await getServicesFromDB();
         if (dbServices && dbServices.length > 0) {
-          const merged = dbServices.map(dbS => {
-            const staticS = allServices.find(s => s.id === dbS.id);
-            return {
-              ...dbS,
-              // Keep static icon component if available, otherwise use string from DB or default
-              icon: staticS ? staticS.icon : (dbS.icon || CalendarIcon), // Changed Scissors to CalendarIcon as a generic fallback
-              mediaType: dbS.mediaType as 'image' | 'video',
-              // Use DB price and duration, fallback to static if missing (though DB should have them)
-              price: dbS.price || staticS?.price || "0",
-              duration: dbS.duration || staticS?.duration || 60,
-              description: dbS.description || staticS?.description || "",
-              name: dbS.name || staticS?.name || "",
-              mediaUrl: dbS.mediaUrl || staticS?.mediaUrl || "",
-              imageHint: dbS.imageHint || staticS?.imageHint || ""
-            };
-          });
-          setServices(merged);
+          setServices(dbServices);
         }
       } catch (error) {
-        console.error("Failed to fetch dynamic services", error);
+        console.error("Failed to fetch dynamic services from Firestore:", error);
       }
     };
     fetchServices();
@@ -124,7 +110,7 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
   }, [chosenServices]);
 
   const totalPrice = React.useMemo(() => {
-    return chosenServices.reduce((acc, s) => acc + parseInt(s.price), 0);
+    return chosenServices.reduce((acc, s) => acc + (parseInt(String(s.price || '0').replace(/\D/g, ''), 10) || 0), 0);
   }, [chosenServices]);
 
   const fetchBookedTimes = React.useCallback(async (forDate: Date, barberId: string) => {
@@ -132,9 +118,10 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
     const dateString = format(forDate, "yyyy-MM-dd");
     try {
       const result = await getAvailableTimesForDate(dateString, barberId);
-      const formattedBlocked = result.blocked.map(t => t.toUpperCase().replace(/\s/g, ''));
+      const formattedBlocked = (result.blocked || []).map(t => t.toUpperCase().replace(/\s/g, ''));
       setBookedTimes(formattedBlocked);
-      setGapSlots(result.gaps); // Keep original format for display
+      setGapSlots(result.gaps || []); // Keep original format for display
+      setBookedIntervals(result.intervals || []);
     } catch (error) {
       console.error(error);
       toast({
@@ -169,6 +156,9 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
         if (date && selectedBarberId) {
           fetchBookedTimes(date, selectedBarberId);
         }
+        if (state.whatsappUrl) {
+          window.open(state.whatsappUrl, "_blank", "noopener,noreferrer");
+        }
       }, 500);
 
     } else if (!state.success && state.message) {
@@ -177,6 +167,10 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
         description: state.message,
         variant: "destructive",
       });
+      // Automatically refresh booked slots from DB so occupied slots disappear immediately
+      if (date && selectedBarberId) {
+        fetchBookedTimes(date, selectedBarberId);
+      }
     }
   }, [state, playSuccessSound, date, fetchBookedTimes, toast, selectedBarberId]);
 
@@ -184,32 +178,33 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
   const { morning, afternoon, night } = React.useMemo(() => {
     if (!date) return { morning: [], afternoon: [], night: [] };
     const baseTimes = getBaseAvailableTimes(date);
+    const effectiveDuration = totalDuration > 0 ? totalDuration : 60;
 
-    // Robust time parser that handles both "08:00 AM" and "08:00AM"
-    const timeToMinutes = (timeStr: string): number => {
-      const normalized = timeStr.trim().toUpperCase();
-      const match = normalized.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
-      if (!match) return -1;
-      let hours = parseInt(match[1], 10);
-      const minutes = parseInt(match[2], 10);
-      const modifier = match[3];
-      if (modifier === 'PM' && hours < 12) hours += 12;
-      if (modifier === 'AM' && hours === 12) hours = 0;
-      return hours * 60 + minutes;
+    // Continuous interval overlap checker: guarantees accurate fitting for any duration (e.g. 75 min)
+    const isSlotFit = (startTimeStr: string) => {
+      const startMinutes = timeToMinutes(startTimeStr);
+      if (startMinutes === -1) return false;
+      const endMinutes = startMinutes + effectiveDuration;
+
+      // Check Business Hours (8:00 AM = 480 mins, 9:00 PM = 1260 mins)
+      if (startMinutes < 480 || endMinutes > 1260) return false;
+
+      // Check against exact continuous intervals
+      for (const interval of bookedIntervals) {
+        if (doIntervalsOverlap(startMinutes, endMinutes, interval.startMin, interval.endMin)) {
+          return false;
+        }
+      }
+      return true;
     };
 
-    // Filter hourly slots that are directly blocked
-    const filterBooked = (times: string[]) =>
-      times.filter(time => !bookedTimes.includes(time.replace(/\s/g, '').toUpperCase()));
-
-    let availableMorning = filterBooked(baseTimes.morning);
-    let availableAfternoon = filterBooked(baseTimes.afternoon);
-    let availableNight = filterBooked(baseTimes.night);
+    let availableMorning = baseTimes.morning.filter(isSlotFit);
+    let availableAfternoon = baseTimes.afternoon.filter(isSlotFit);
+    let availableNight = baseTimes.night.filter(isSlotFit);
 
     // Merge gap slots into the appropriate time-of-day category
     for (const gap of gapSlots) {
-      // Check gap isn't blocked (double-safety)
-      if (bookedTimes.includes(gap.replace(/\s/g, '').toUpperCase())) continue;
+      if (!isSlotFit(gap)) continue;
 
       const mins = timeToMinutes(gap);
       if (mins === -1) continue;
@@ -223,16 +218,20 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
       }
     }
 
-    // Sort each category by time
+    // Deduplicate and sort each category by time
     const sortByTime = (a: string, b: string) => timeToMinutes(a) - timeToMinutes(b);
-    availableMorning.sort(sortByTime);
-    availableAfternoon.sort(sortByTime);
-    availableNight.sort(sortByTime);
+    availableMorning = Array.from(new Set(availableMorning)).sort(sortByTime);
+    availableAfternoon = Array.from(new Set(availableAfternoon)).sort(sortByTime);
+    availableNight = Array.from(new Set(availableNight)).sort(sortByTime);
 
-    // Filter past times if today
-    if (isTodayDateFns(date)) {
-      const now = new Date();
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    // Filter past times if today in Colombia (America/Bogota)
+    const todayBogota = new Date().toLocaleDateString("en-CA", { timeZone: "America/Bogota" });
+    const selectedDateStr = date ? format(date, "yyyy-MM-dd") : "";
+
+    if (selectedDateStr === todayBogota) {
+      const bogotaTimeStr = new Date().toLocaleTimeString("en-US", { timeZone: "America/Bogota", hour12: false });
+      const [h, m] = bogotaTimeStr.split(":").map(Number);
+      const nowMinutes = (h || 0) * 60 + (m || 0);
       const filterPastTimes = (times: string[]) => times.filter(time => timeToMinutes(time) > nowMinutes);
 
       availableMorning = filterPastTimes(availableMorning);
@@ -240,37 +239,12 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
       availableNight = filterPastTimes(availableNight);
     }
 
-    // Duration Fit Check: ensure the full service duration fits
-    // without overlapping any blocked 10-min interval or exceeding closing time
-    const bookedMinutesSet = new Set(bookedTimes.map(t => timeToMinutes(t)));
-
-    const isSlotFit = (startTimeStr: string) => {
-      const startMinutes = timeToMinutes(startTimeStr);
-      if (startMinutes === -1) return false;
-      const endMinutes = startMinutes + totalDuration;
-
-      // Check Closing Time (9:00 PM = 1260 mins)
-      if (endMinutes > 1260) return false;
-
-      // Check every 10-min interval for overlap
-      for (let t = startMinutes; t < endMinutes; t += SLOT_INTERVAL_MINUTES) {
-        if (bookedMinutesSet.has(t)) {
-          return false;
-        }
-      }
-      return true;
-    };
-
-    availableMorning = availableMorning.filter(isSlotFit);
-    availableAfternoon = availableAfternoon.filter(isSlotFit);
-    availableNight = availableNight.filter(isSlotFit);
-
     return {
       morning: availableMorning,
       afternoon: availableAfternoon,
       night: availableNight,
     };
-  }, [date, bookedTimes, gapSlots, totalDuration]);
+  }, [date, bookedIntervals, gapSlots, totalDuration]);
 
   const hasAvailableTimes = morning.length > 0 || afternoon.length > 0 || night.length > 0;
 
@@ -281,12 +255,58 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
     setIsCalendarOpen(false);
   };
 
-  const handleTimeSelect = (time: string) => {
-    setSelectedTime(time);
+  const handleTimeSelect = async (time: string) => {
+    if (!date || !selectedBarberId) return;
     playClickSound();
-    setCurrentStep("fill-details");
-    if (bookingCardRef.current) {
-      bookingCardRef.current.scrollIntoView({ behavior: 'smooth' });
+    setValidatingTime(time);
+    try {
+      const dateString = format(date, "yyyy-MM-dd");
+      const freshResult = await getAvailableTimesForDate(dateString, selectedBarberId);
+      const freshIntervals = freshResult.intervals || [];
+      const freshBlocked = (freshResult.blocked || []).map(t => t.toUpperCase().replace(/\s/g, ''));
+      setBookedTimes(freshBlocked);
+      setBookedIntervals(freshIntervals);
+      setGapSlots(freshResult.gaps || []);
+
+      const startMinutes = timeToMinutes(time);
+      const effectiveDuration = totalDuration > 0 ? totalDuration : 60;
+      const endMinutes = startMinutes + effectiveDuration;
+
+      // Check Business Hours (8:00 AM = 480 mins, 9:00 PM = 1260 mins)
+      if (startMinutes < 480 || endMinutes > 1260) {
+        toast({
+          title: "Horario no disponible",
+          description: "Este horario excede el horario de atención de la barbería.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Check against fresh intervals from DB
+      const isTaken = freshIntervals.some(interval => 
+        doIntervalsOverlap(startMinutes, endMinutes, interval.startMin, interval.endMin)
+      );
+
+      if (isTaken) {
+        toast({
+          title: "Horario ya reservado",
+          description: "Este horario acaba de ser ocupado por otro cliente. Por favor, elige otro horario disponible.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setSelectedTime(time);
+      setCurrentStep("fill-details");
+      if (bookingCardRef.current) {
+        bookingCardRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
+    } catch (error) {
+      console.error("Error pre-validating time slot:", error);
+      setSelectedTime(time);
+      setCurrentStep("fill-details");
+    } finally {
+      setValidatingTime(null);
     }
   };
 
@@ -325,7 +345,19 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
         <h4 className="font-semibold text-sm mb-2">{title}</h4>
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
           {times.map((time) => (
-            <Button key={time} variant={selectedTime === time ? "default" : "outline"} onClick={() => handleTimeSelect(time)} className="transition-all">{time}</Button>
+            <Button 
+              key={time} 
+              variant={selectedTime === time ? "default" : "outline"} 
+              onClick={() => handleTimeSelect(time)} 
+              disabled={validatingTime !== null}
+              className="transition-all flex items-center justify-center gap-1"
+            >
+              {validatingTime === time ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                time
+              )}
+            </Button>
           ))}
         </div>
       </div>
@@ -495,20 +527,6 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
                   ref={formRef} 
                   action={formAction} 
                   className="space-y-6"
-                  onSubmit={(e) => {
-                    const formData = new FormData(e.currentTarget);
-                    const clientName = formData.get('name') as string;
-                    if (chosenBarber && chosenBarber.whatsapp && clientName) {
-                      const serviceNames = chosenServices.map(s => s.name).join(', ');
-                      const totalDuration = chosenServices.reduce((acc, s) => acc + s.duration, 0);
-                      const totalPrice = chosenServices.reduce((acc, s) => acc + parseInt(s.price), 0);
-                      const formattedPrice = totalPrice.toLocaleString('es-CO');
-                      const formattedDate = date ? format(date, "yyyy-MM-dd") : "";
-                      const waMessage = `¡Hola ${chosenBarber.name}! Acabo de agendar una cita contigo en Barba Larga.\n\n*Detalles de la cita:*\n👤 *Cliente:* ${clientName}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${selectedTime}\n✂️ *Servicios:* ${serviceNames}\n⏱ *Duración estimada:* ${totalDuration} min\n💰 *Total:* $${formattedPrice}\n\n¡Nos vemos pronto!`;
-                      const waUrl = `https://api.whatsapp.com/send?phone=${chosenBarber.whatsapp}&text=${encodeURIComponent(waMessage)}`;
-                      window.open(waUrl, "_blank", "noopener,noreferrer");
-                    }
-                  }}
                 >
                   <input type="hidden" name="barberId" value={selectedBarberId || ""} />
                   <input type="hidden" name="service" value={selectedServices.join(',')} />

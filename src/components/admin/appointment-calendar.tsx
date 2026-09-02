@@ -4,7 +4,7 @@ import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react'
 import { format, parse, addDays, subDays, startOfWeek, isSameDay, isToday as isTodayFn } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Appointment, TeamMember } from '@/app/actions';
-import { getServiceDetails } from '@/lib/data';
+import { getServiceDetails, timeToMinutes, minutesToTimeStr, Service } from '@/lib/data';
 import { ChevronLeft, ChevronRight, Ban, GripVertical } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────
@@ -28,6 +28,7 @@ interface CalendarEvent {
 interface AppointmentCalendarProps {
     appointments: Appointment[];
     team: TeamMember[];
+    services?: Service[];
     onAppointmentUpdate: (appointment: Appointment) => void;
     onSelectEvent: (event: Appointment) => void;
     onSelectSlot: (slotInfo: { start: Date; end: Date; resourceId?: string }) => void;
@@ -41,7 +42,7 @@ const TOTAL_HOURS = END_HOUR - START_HOUR;
 const DAY_NAMES_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 // ─── Helpers ────────────────────────────────────────────────
-function timeToMinutes(dateObj: Date): number {
+function dateToMinutes(dateObj: Date): number {
     return dateObj.getHours() * 60 + dateObj.getMinutes();
 }
 
@@ -85,8 +86,17 @@ function getBarberFallbackColor(barberId: string): string {
     return BARBER_COLOR_PALETTE[index];
 }
 
-function snapToHalfHour(minutesFromTop: number): number {
-    return Math.round(minutesFromTop / 30) * 30;
+function snapToInterval(minutesFromTop: number): number {
+    return Math.round(minutesFromTop / 10) * 10;
+}
+
+function formatTime12(date: Date): string {
+    let h = date.getHours();
+    const m = date.getMinutes();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${h}:${m.toString().padStart(2, '0')} ${ampm}`;
 }
 
 // ─── Overlap Layout Algorithm (Google Calendar style) ────────
@@ -112,8 +122,8 @@ function computeOverlapLayout(events: CalendarEvent[]): Map<string, LayoutInfo> 
     let clusterEnd = 0;
 
     for (const event of sorted) {
-        const startMin = timeToMinutes(event.start);
-        const endMin = timeToMinutes(event.end);
+        const startMin = dateToMinutes(event.start);
+        const endMin = dateToMinutes(event.end);
 
         if (currentCluster.length === 0 || startMin < clusterEnd) {
             // Overlaps with current cluster
@@ -133,13 +143,13 @@ function computeOverlapLayout(events: CalendarEvent[]): Map<string, LayoutInfo> 
         const columns: CalendarEvent[][] = [];
 
         for (const event of cluster) {
-            const eventStart = timeToMinutes(event.start);
+            const eventStart = dateToMinutes(event.start);
 
             // Find the first column where this event doesn't overlap
             let placed = false;
             for (let col = 0; col < columns.length; col++) {
                 const lastInCol = columns[col][columns[col].length - 1];
-                const lastEnd = timeToMinutes(lastInCol.end);
+                const lastEnd = dateToMinutes(lastInCol.end);
                 if (eventStart >= lastEnd) {
                     columns[col].push(event);
                     placed = true;
@@ -173,7 +183,7 @@ function NowLine() {
         return () => clearInterval(interval);
     }, []);
 
-    const minutes = timeToMinutes(now);
+    const minutes = dateToMinutes(now);
     if (minutes < START_HOUR * 60 || minutes > END_HOUR * 60) return null;
 
     const top = minutesToTop(minutes);
@@ -190,17 +200,19 @@ function EventChip({
     event,
     onClick,
     onDragStart,
+    onTouchStart,
     isDragging,
     style: extraStyle,
 }: {
     event: CalendarEvent;
     onClick: () => void;
     onDragStart?: (e: React.DragEvent) => void;
+    onTouchStart?: (e: React.TouchEvent) => void;
     isDragging?: boolean;
     style?: React.CSSProperties;
 }) {
-    const startMin = timeToMinutes(event.start);
-    const endMin = timeToMinutes(event.end);
+    const startMin = dateToMinutes(event.start);
+    const endMin = dateToMinutes(event.end);
     const top = minutesToTop(startMin);
     const height = Math.max(minutesToHeight(startMin, endMin), 24);
     const isShort = height < 44;
@@ -209,11 +221,13 @@ function EventChip({
 
     const bgColor = isBlocked ? '#6B7280' : isCompleted ? '#059669' : event.barberColor;
     const rgb = hexToRgb(bgColor);
+    const timeLabel = `${formatTime12(event.start)} - ${formatTime12(event.end)}`;
 
     return (
         <div
             draggable={!isBlocked}
             onDragStart={onDragStart}
+            onTouchStart={onTouchStart}
             onClick={onClick}
             className={`cal-event-chip ${isDragging ? 'dragging' : ''}`}
             style={{
@@ -243,15 +257,22 @@ function EventChip({
                             <span>💈 {event.barberName}</span>
                         </div>
                     )}
+                    <div className="cal-chip-time">
+                        <span>{timeLabel}</span>
+                    </div>
                 </>
             ) : isShort ? (
                 <div className="cal-chip-content">
                     <span className="cal-chip-title">{event.clientName}</span>
+                    <span className="cal-chip-time-inline">{formatTime12(event.start)}</span>
                 </div>
             ) : (
                 <>
                     <div className="cal-chip-content">
                         <span className="cal-chip-title">{event.clientName}</span>
+                    </div>
+                    <div className="cal-chip-time">
+                        <span>{timeLabel}</span>
                     </div>
                     <div className="cal-chip-meta">
                         <span>{event.serviceName}</span>
@@ -269,7 +290,7 @@ function EventChip({
 }
 
 // ─── Drop Ghost Preview ─────────────────────────────────────
-function DropGhost({ top, height, color }: { top: number; height: number; color: string }) {
+function DropGhost({ top, height, color, style: extraStyle }: { top: number; height: number; color: string; style?: React.CSSProperties }) {
     const rgb = hexToRgb(color);
     return (
         <div
@@ -279,13 +300,14 @@ function DropGhost({ top, height, color }: { top: number; height: number; color:
                 height: `${height}px`,
                 '--chip-color': color,
                 '--chip-rgb': rgb,
+                ...extraStyle,
             } as React.CSSProperties}
         />
     );
 }
 
 // ─── Main Calendar Component ────────────────────────────────
-export function AppointmentCalendar({ appointments, team, onAppointmentUpdate, onSelectEvent, onSelectSlot }: AppointmentCalendarProps) {
+export function AppointmentCalendar({ appointments, team, services, onAppointmentUpdate, onSelectEvent, onSelectSlot }: AppointmentCalendarProps) {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [viewMode, setViewMode] = useState<ViewMode>('day');
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -294,6 +316,7 @@ export function AppointmentCalendar({ appointments, team, onAppointmentUpdate, o
     // ─── Drag and Drop State ────────────────────────────────
     const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
     const [dropTarget, setDropTarget] = useState<{ dayIdx: number; minuteOfDay: number } | null>(null);
+    const touchState = useRef<{ eventId: string; startY: number; startScrollTop: number; dayIdx: number; active: boolean; timeoutId?: NodeJS.Timeout } | null>(null);
 
     // Responsive detection
     useEffect(() => {
@@ -313,7 +336,7 @@ export function AppointmentCalendar({ appointments, team, onAppointmentUpdate, o
     useEffect(() => {
         if (scrollRef.current) {
             const now = new Date();
-            const currentMin = timeToMinutes(now);
+            const currentMin = dateToMinutes(now);
             const scrollTarget = minutesToTop(currentMin) - 100;
             scrollRef.current.scrollTop = Math.max(0, scrollTarget);
         }
@@ -331,15 +354,30 @@ export function AppointmentCalendar({ appointments, team, onAppointmentUpdate, o
 
     // ─── Transform appointments to CalendarEvents ───────────
     const events = useMemo(() => {
-        return appointments.map(apt => {
-            const dateStr = format(new Date(apt.date + 'T12:00:00'), 'yyyy-MM-dd');
-            const start = parse(`${dateStr} ${apt.time}`, 'yyyy-MM-dd hh:mm a', new Date());
-            let end: Date;
-            if (apt.endTime) {
-                end = parse(`${dateStr} ${apt.endTime}`, 'yyyy-MM-dd hh:mm a', new Date());
-            } else {
-                end = new Date(start.getTime() + 60 * 60 * 1000);
+        const result: CalendarEvent[] = [];
+
+        for (const apt of appointments) {
+            if (!apt || !apt.date || !apt.time) continue;
+            if (apt.id?.startsWith('lock_') || (apt as any).type === 'lock') continue;
+
+            const startMin = timeToMinutes(apt.time);
+            if (startMin === -1) continue;
+
+            let endMin = apt.endTime ? timeToMinutes(apt.endTime) : -1;
+            if (endMin === -1 || endMin <= startMin) {
+                endMin = startMin + 60;
             }
+
+            const dateParts = apt.date.split('-');
+            if (dateParts.length !== 3) continue;
+            const year = parseInt(dateParts[0], 10);
+            const month = parseInt(dateParts[1], 10) - 1;
+            const day = parseInt(dateParts[2], 10);
+
+            const start = new Date(year, month, day, Math.floor(startMin / 60), startMin % 60, 0);
+            const end = new Date(year, month, day, Math.floor(endMin / 60), endMin % 60, 0);
+
+            if (isNaN(start.getTime()) || isNaN(end.getTime())) continue;
 
             const barber = team.find(b => b.id === apt.barberId);
             const barberName = barber ? barber.name : 'Sin barbero';
@@ -347,14 +385,14 @@ export function AppointmentCalendar({ appointments, team, onAppointmentUpdate, o
 
             let serviceName = 'Bloqueo';
             if (apt.type !== 'blocked' && apt.service) {
-                const details = getServiceDetails(apt.service);
+                const details = getServiceDetails(apt.service, services);
                 serviceName = details.names;
             }
 
-            return {
+            result.push({
                 id: apt.id,
-                title: apt.name,
-                clientName: apt.name,
+                title: apt.name || '',
+                clientName: apt.name || '',
                 barberName,
                 barberId: apt.barberId,
                 barberColor,
@@ -364,9 +402,11 @@ export function AppointmentCalendar({ appointments, team, onAppointmentUpdate, o
                 type: apt.type,
                 status: apt.status,
                 original: apt,
-            } as CalendarEvent;
-        });
-    }, [appointments, team]);
+            });
+        }
+
+        return result;
+    }, [appointments, team, services]);
 
     // ─── Events for a specific day ──────────────────────────
     const getEventsForDay = useCallback((day: Date): CalendarEvent[] => {
@@ -403,7 +443,6 @@ export function AppointmentCalendar({ appointments, team, onAppointmentUpdate, o
         setDraggedEvent(event);
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', event.id);
-        // Create a custom drag image
         const el = e.currentTarget as HTMLElement;
         if (el) {
             e.dataTransfer.setDragImage(el, el.offsetWidth / 2, 10);
@@ -416,16 +455,14 @@ export function AppointmentCalendar({ appointments, team, onAppointmentUpdate, o
 
         const column = e.currentTarget as HTMLElement;
         const rect = column.getBoundingClientRect();
-        const scrollTop = scrollRef.current?.scrollTop || 0;
-        const relativeY = e.clientY - rect.top + scrollTop;
+        const relativeY = e.clientY - rect.top;
         const minuteOfDay = START_HOUR * 60 + (relativeY / HOUR_HEIGHT) * 60;
-        const snapped = snapToHalfHour(minuteOfDay);
+        const snapped = snapToInterval(minuteOfDay);
 
         setDropTarget({ dayIdx, minuteOfDay: snapped });
     };
 
     const handleDragLeave = (e: React.DragEvent) => {
-        // Only clear if we're leaving the column entirely
         const relatedTarget = e.relatedTarget as HTMLElement;
         const currentTarget = e.currentTarget as HTMLElement;
         if (!currentTarget.contains(relatedTarget)) {
@@ -433,39 +470,122 @@ export function AppointmentCalendar({ appointments, team, onAppointmentUpdate, o
         }
     };
 
-    const handleDrop = (e: React.DragEvent, dayIdx: number) => {
-        e.preventDefault();
+    const finalizeDrop = useCallback((dayIdx: number) => {
         if (!draggedEvent || !dropTarget) return;
-
         const targetDay = visibleDays[dayIdx];
         const snappedMinute = dropTarget.minuteOfDay;
         const newHour = Math.floor(snappedMinute / 60);
         const newMinute = snappedMinute % 60;
 
-        // Calculate new time
         const newStart = new Date(targetDay);
         newStart.setHours(newHour, newMinute, 0, 0);
 
-        // Calculate duration
         const durationMs = draggedEvent.end.getTime() - draggedEvent.start.getTime();
         const newEnd = new Date(newStart.getTime() + durationMs);
 
         const updatedAppt: Appointment = {
             ...draggedEvent.original,
             date: format(newStart, 'yyyy-MM-dd'),
-            time: format(newStart, 'hh:mm a'),
-            endTime: format(newEnd, 'hh:mm a'),
+            time: minutesToTimeStr(dateToMinutes(newStart)),
+            endTime: minutesToTimeStr(dateToMinutes(newEnd)),
         };
 
         onAppointmentUpdate(updatedAppt);
         setDraggedEvent(null);
         setDropTarget(null);
+    }, [draggedEvent, dropTarget, visibleDays, onAppointmentUpdate]);
+
+    const handleDrop = (e: React.DragEvent, dayIdx: number) => {
+        e.preventDefault();
+        finalizeDrop(dayIdx);
     };
 
     const handleDragEnd = () => {
         setDraggedEvent(null);
         setDropTarget(null);
     };
+
+    // ─── Touch Drag for Mobile ──────────────────────────────
+    const handleTouchStart = useCallback((e: React.TouchEvent, event: CalendarEvent, dayIdx: number) => {
+        if (event.type === 'blocked') return;
+        const touch = e.touches[0];
+        
+        const timeoutId = setTimeout(() => {
+            if (touchState.current) {
+                touchState.current.active = true;
+                const ev = events.find(ev => ev.id === touchState.current!.eventId);
+                if (ev) {
+                    setDraggedEvent(ev);
+                    if (navigator.vibrate) navigator.vibrate(50); // Haptic feedback on active drag
+                }
+            }
+        }, 400); // 400ms long press to drag
+
+        touchState.current = {
+            eventId: event.id,
+            startY: touch.clientY,
+            startScrollTop: scrollRef.current?.scrollTop || 0,
+            dayIdx,
+            active: false,
+            timeoutId,
+        };
+    }, [events]);
+
+    useEffect(() => {
+        const handleTouchMove = (e: TouchEvent) => {
+            if (!touchState.current) return;
+            const touch = e.touches[0];
+            const dy = Math.abs(touch.clientY - touchState.current.startY);
+            
+            if (!touchState.current.active) {
+                if (dy > 10) {
+                    // They are scrolling, cancel the long press drag
+                    clearTimeout(touchState.current.timeoutId);
+                    touchState.current = null;
+                }
+                return;
+            }
+            e.preventDefault();
+
+            // Find column element under touch
+            const columns = scrollRef.current?.querySelectorAll('.cal-day-column');
+            if (!columns) return;
+            let targetDayIdx = touchState.current.dayIdx;
+            columns.forEach((col, idx) => {
+                const rect = col.getBoundingClientRect();
+                if (touch.clientX >= rect.left && touch.clientX <= rect.right) {
+                    targetDayIdx = idx;
+                }
+            });
+
+            const col = columns[targetDayIdx];
+            if (!col) return;
+            const rect = col.getBoundingClientRect();
+            const relativeY = touch.clientY - rect.top;
+            const minuteOfDay = START_HOUR * 60 + (relativeY / HOUR_HEIGHT) * 60;
+            const snapped = snapToInterval(minuteOfDay);
+            setDropTarget({ dayIdx: targetDayIdx, minuteOfDay: snapped });
+        };
+
+        const handleTouchEnd = () => {
+            if (touchState.current?.timeoutId) {
+                clearTimeout(touchState.current.timeoutId);
+            }
+            if (touchState.current?.active && dropTarget) {
+                finalizeDrop(dropTarget.dayIdx);
+            }
+            touchState.current = null;
+            setDraggedEvent(null);
+            setDropTarget(null);
+        };
+
+        document.addEventListener('touchmove', handleTouchMove, { passive: false });
+        document.addEventListener('touchend', handleTouchEnd);
+        return () => {
+            document.removeEventListener('touchmove', handleTouchMove);
+            document.removeEventListener('touchend', handleTouchEnd);
+        };
+    }, [events, dropTarget, finalizeDrop]);
 
     // ─── Header label ───────────────────────────────────────
     const headerLabel = useMemo(() => {
@@ -482,7 +602,7 @@ export function AppointmentCalendar({ appointments, team, onAppointmentUpdate, o
 
     // ─── Render ─────────────────────────────────────────────
     return (
-        <div className="cal-root" onDragEnd={handleDragEnd}>
+        <div className={`cal-root ${draggedEvent ? 'is-dragging' : ''}`} onDragEnd={handleDragEnd}>
             {/* ── Toolbar ── */}
             <div className="cal-toolbar">
                 <div className="cal-toolbar-nav">
@@ -602,37 +722,79 @@ export function AppointmentCalendar({ appointments, team, onAppointmentUpdate, o
 
                                 {/* Events with overlap layout */}
                                 {(() => {
-                                    const layoutMap = computeOverlapLayout(dayEvents);
-                                    return dayEvents.map(event => {
-                                        const layout = layoutMap.get(event.id);
-                                        const overlapStyle: React.CSSProperties = layout && layout.totalColumns > 1
-                                            ? {
-                                                left: `calc(${(layout.column / layout.totalColumns) * 100}% + 1px)`,
-                                                width: `calc(${(1 / layout.totalColumns) * 100}% - 2px)`,
-                                                right: 'auto',
-                                            }
-                                            : {};
-                                        return (
-                                            <EventChip
-                                                key={event.id}
-                                                event={event}
-                                                onClick={() => onSelectEvent(event.original)}
-                                                onDragStart={(e) => handleDragStart(e, event)}
-                                                isDragging={draggedEvent?.id === event.id}
-                                                style={overlapStyle}
-                                            />
-                                        );
-                                    });
-                                })()}
+                                    let layoutEvents = [...dayEvents];
+                                    const ghostEventId = 'drag-ghost-temp-id';
+                                    let ghostEvent: CalendarEvent | null = null;
 
-                                {/* Drop ghost preview */}
-                                {isDropHere && draggedEvent && (
-                                    <DropGhost
-                                        top={ghostTop}
-                                        height={ghostHeight}
-                                        color={draggedEvent.barberColor}
-                                    />
-                                )}
+                                    if (isDropHere && draggedEvent && dropTarget) {
+                                        const targetDay = visibleDays[dayIdx];
+                                        const snappedMinute = dropTarget.minuteOfDay;
+                                        const newHour = Math.floor(snappedMinute / 60);
+                                        const newMinute = snappedMinute % 60;
+
+                                        const ghostStart = new Date(targetDay);
+                                        ghostStart.setHours(newHour, newMinute, 0, 0);
+
+                                        const durationMs = draggedEvent.end.getTime() - draggedEvent.start.getTime();
+                                        const ghostEnd = new Date(ghostStart.getTime() + durationMs);
+
+                                        ghostEvent = {
+                                            ...draggedEvent,
+                                            id: ghostEventId,
+                                            start: ghostStart,
+                                            end: ghostEnd,
+                                        };
+                                        layoutEvents.push(ghostEvent);
+                                    }
+
+                                    const layoutMap = computeOverlapLayout(layoutEvents);
+
+                                    return (
+                                        <>
+                                            {dayEvents.map(event => {
+                                                const layout = layoutMap.get(event.id);
+                                                const overlapStyle: React.CSSProperties = layout && layout.totalColumns > 1
+                                                    ? {
+                                                        left: `calc(${(layout.column / layout.totalColumns) * 100}% + 1px)`,
+                                                        width: `calc(${(1 / layout.totalColumns) * 100}% - 2px)`,
+                                                        right: 'auto',
+                                                    }
+                                                    : {};
+                                                return (
+                                                    <EventChip
+                                                        key={event.id}
+                                                        event={event}
+                                                        onClick={() => onSelectEvent(event.original)}
+                                                        onDragStart={(e) => handleDragStart(e, event)}
+                                                        onTouchStart={(e) => handleTouchStart(e, event, dayIdx)}
+                                                        isDragging={draggedEvent?.id === event.id}
+                                                        style={overlapStyle}
+                                                    />
+                                                );
+                                            })}
+
+                                            {/* Drop ghost preview with layout style */}
+                                            {ghostEvent && (() => {
+                                                const layout = layoutMap.get(ghostEventId);
+                                                const overlapStyle: React.CSSProperties = layout && layout.totalColumns > 1
+                                                    ? {
+                                                        left: `calc(${(layout.column / layout.totalColumns) * 100}% + 1px)`,
+                                                        width: `calc(${(1 / layout.totalColumns) * 100}% - 2px)`,
+                                                        right: 'auto',
+                                                    }
+                                                    : {};
+                                                return (
+                                                    <DropGhost
+                                                        top={ghostTop}
+                                                        height={ghostHeight}
+                                                        color={draggedEvent?.barberColor || '#2563eb'}
+                                                        style={overlapStyle}
+                                                    />
+                                                );
+                                            })()}
+                                        </>
+                                    );
+                                })()}
 
                                 {/* Now line (only on today) */}
                                 {isToday && <NowLine />}

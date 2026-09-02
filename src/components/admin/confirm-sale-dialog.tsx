@@ -8,7 +8,8 @@ import { Loader2, CheckCircle, Trash2 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import type { Appointment, TeamMember } from '@/app/actions';
 import { confirmAppointmentAsSale, deleteAppointment } from '@/app/actions';
-import { getServiceDetails } from '@/lib/data';
+import { getServicesFromDB } from '@/app/actions/services';
+import { getServiceDetails, Service } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
 
 interface ConfirmSaleDialogProps {
@@ -22,7 +23,14 @@ interface ConfirmSaleDialogProps {
 export function ConfirmSaleDialog({ appointment, team, onSaleConfirmed, onAppointmentDeleted, onOpenChange }: ConfirmSaleDialogProps) {
     const [paymentMethod, setPaymentMethod] = React.useState<'cash' | 'card' | 'transfer'>('cash');
     const [isSubmitting, setIsSubmitting] = React.useState(false);
+    const [services, setServices] = React.useState<Service[]>([]);
     const { toast } = useToast();
+
+    React.useEffect(() => {
+        getServicesFromDB().then(res => {
+            if (res && res.length > 0) setServices(res);
+        }).catch(console.error);
+    }, []);
 
     if (!appointment) return null;
 
@@ -30,7 +38,7 @@ export function ConfirmSaleDialog({ appointment, team, onSaleConfirmed, onAppoin
     const barber = team.find(b => b.id === appointment.barberId);
     const barberName = barber ? barber.name : 'Desconocido';
 
-    const { names: serviceNames, totalPrice } = getServiceDetails(appointment.service);
+    const { names: serviceNames, totalPrice } = getServiceDetails(appointment.service, services.length > 0 ? services : undefined);
 
     const handleConfirmSale = async () => {
         setIsSubmitting(true);

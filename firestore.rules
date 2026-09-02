@@ -3,55 +3,49 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Allow public creation of appointments, and server-side management.
+    // CITAS (appointments)
     match /appointments/{appointmentId} {
-      allow read: if true; // Needed for calendar queries
-      allow list: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
+      allow read, write: if true;
     }
 
-    // Allow server-side management of transactions.
+    // FLUJO DE CAJA / VENTAS (transactions)
     match /transactions/{transactionId} {
-      allow read: if true;
-      allow list: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
+      allow read, write: if true;
     }
 
-    // Allow server-side management of products.
+    // PRODUCTOS (products)
     match /products/{productId} {
-      allow read: if true;
-      allow list: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
+      allow read, write: if true;
     }
     
-    // Allow server-side management of customers.
+    // BASE DE CLIENTES (customers)
     match /customers/{customerId} {
-       allow read: if true;
-       allow list: if true;
-       allow create: if true;
-       allow update: if true;
-       allow delete: if true;
+      allow read, write: if true;
     }
     
-    // Allow anyone to read and write to the team collection for admin purposes.
+    // EQUIPO (team)
     match /team/{memberId} {
-       allow read: if true;
-       allow write: if true;
+      allow read, write: if true;
     }
     
-    // Allow public read for notifications, and server-side management.
+    // NOTIFICACIONES (notifications)
     match /notifications/{notificationId} {
-       allow read: if true;
-       allow list: if true;
-       allow create: if true;
-       allow update: if true;
-       allow delete: if true;
+      allow read, write: if true;
+    }
+
+    // SERVICIOS (services)
+    match /services/{serviceId} {
+      allow read, write: if true;
+    }
+
+    // LOGS Y TELEMETRÍA DEL SISTEMA (system_logs)
+    match /system_logs/{logId} {
+      allow read, write: if true;
+    }
+
+    // REGLA POR DEFECTO
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

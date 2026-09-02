@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import { cn } from "@/lib/utils";
-import { Play, Pause, Loader2 } from "lucide-react";
+import { Play, Pause, Loader2, Scissors, Sparkles, LogOut } from "lucide-react";
 import { TopNav } from "@/components/top-nav";
 import { AboutSection } from "@/components/about-section";
 import { TeamSection } from "@/components/team-section";
@@ -26,6 +26,16 @@ import { BottomNav } from "@/components/bottom-nav";
 import { AudioPlayer } from "@/components/audio-player";
 import { getNotifications, type Notification as NotificationType } from "@/app/actions";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 
 type Scene = 'home' | 'about' | 'team' | 'services' | 'booking' | 'ai-advisor' | 'location' | 'contact';
@@ -193,12 +203,62 @@ const RightSidebar = ({ notifications, isLoading }: { notifications: Notificatio
 };
 
 
+const SCENE_HASH_MAP: Record<Scene, string> = {
+  home: 'inicio',
+  services: 'servicios',
+  team: 'equipo',
+  booking: 'agendar',
+  'ai-advisor': 'asesor-ia',
+  about: 'nosotros',
+  location: 'ubicacion',
+  contact: 'contacto',
+};
+
+const HASH_SCENE_MAP: Record<string, Scene> = {
+  '': 'home',
+  inicio: 'home',
+  home: 'home',
+  servicios: 'services',
+  services: 'services',
+  equipo: 'team',
+  team: 'team',
+  barberos: 'team',
+  agendar: 'booking',
+  booking: 'booking',
+  reservar: 'booking',
+  citas: 'booking',
+  'asesor-ia': 'ai-advisor',
+  'ai-advisor': 'ai-advisor',
+  asesor: 'ai-advisor',
+  nosotros: 'about',
+  about: 'about',
+  ubicacion: 'location',
+  location: 'location',
+  contacto: 'contact',
+  contact: 'contact',
+};
+
+function getSceneFromHash(): Scene {
+  if (typeof window === 'undefined') return 'home';
+  const rawHash = window.location.hash.replace(/^#/, '').toLowerCase().trim();
+  return HASH_SCENE_MAP[rawHash] || 'home';
+}
+
 export default function HomePage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [activeScene, setActiveScene] = useState<Scene>('home');
   const [notifications, setNotifications] = useState<NotificationType[]>([]);
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
+  const [isExitModalOpen, setIsExitModalOpen] = useState(false);
+
+  const currentSceneRef = useRef<Scene>('home');
+  const allowExitRef = useRef<boolean>(false);
+
+  // Keep ref synchronized with state
+  useEffect(() => {
+    currentSceneRef.current = activeScene;
+  }, [activeScene]);
 
   useEffect(() => {
     setIsLoaded(true);
@@ -209,6 +269,39 @@ export default function HomePage() {
         }
       });
     }
+
+    // Initialize scene from URL hash on load
+    const initialScene = getSceneFromHash();
+    if (initialScene !== 'home') {
+      setActiveScene(initialScene);
+      currentSceneRef.current = initialScene;
+    } else if (typeof window !== 'undefined') {
+      // Set baseline state in history for the root home page
+      window.history.replaceState({ scene: 'home' }, '', window.location.pathname);
+    }
+
+    // Handle browser back and forward buttons
+    const handlePopState = (event: PopStateEvent) => {
+      const prevScene = currentSceneRef.current;
+      const sceneFromState = event.state?.scene as Scene | undefined;
+      const nextScene = sceneFromState || getSceneFromHash();
+
+      // If user was ALREADY on the home scene and tries to back out of the site:
+      if (prevScene === 'home' && (nextScene === 'home' || !sceneFromState)) {
+        if (!allowExitRef.current) {
+          // Push baseline back to prevent leaving immediately
+          window.history.pushState({ scene: 'home' }, '', window.location.pathname);
+          setIsExitModalOpen(true);
+          return;
+        }
+      }
+
+      setActiveScene(nextScene);
+      currentSceneRef.current = nextScene;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    window.addEventListener('popstate', handlePopState);
 
     async function loadNotifications() {
       setIsLoadingNotifications(true);
@@ -222,15 +315,47 @@ export default function HomePage() {
       }
     }
     loadNotifications();
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, []);
 
-  const handleNavigate = (scene: Scene) => {
+  const handleNavigate = (scene: Scene, replace: boolean = false) => {
     setActiveScene(scene);
-    window.scrollTo(0, 0);
-  }
+    currentSceneRef.current = scene;
+    const hashTag = SCENE_HASH_MAP[scene] || scene;
+    const newUrl = scene === 'home' ? window.location.pathname : `#${hashTag}`;
+
+    if (typeof window !== 'undefined') {
+      const currentHash = window.location.hash.replace(/^#/, '').toLowerCase().trim();
+      if (replace) {
+        window.history.replaceState({ scene }, '', newUrl);
+      } else if (currentHash !== hashTag && !(scene === 'home' && !currentHash)) {
+        window.history.pushState({ scene }, '', newUrl);
+      }
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleConfirmExit = () => {
+    setIsExitModalOpen(false);
+    allowExitRef.current = true;
+    if (typeof window !== 'undefined') {
+      if (window.history.length > 1) {
+        window.history.go(-2);
+      } else {
+        window.close();
+      }
+    }
+  };
+
+  const handleCancelExit = () => {
+    setIsExitModalOpen(false);
+  };
 
   const HeroScene = () => (
-    <div className="relative h-screen w-screen">
+    <div id="inicio" className="relative h-screen w-screen">
       <TopNav activeScene={activeScene} onNavigate={handleNavigate} />
       <div className="absolute inset-0 bg-black">
         <video
@@ -259,24 +384,85 @@ export default function HomePage() {
           <TopNav activeScene={activeScene} onNavigate={handleNavigate} />
           <main className="pt-24 pb-28"> {/* Padding to avoid overlap with navbars */}
             <div className="container px-4 md:px-6 max-w-7xl mx-auto">
-              {activeScene === 'about' && <AboutSection />}
-              {activeScene === 'team' && <TeamSection onNavigate={handleNavigate} />}
-              {activeScene === 'services' && <ServiceCatalog onNavigate={handleNavigate} />}
-              {activeScene === 'booking' && <BookingSection onNavigate={handleNavigate} />}
-              {activeScene === 'ai-advisor' && <StyleAdvisorSection onNavigate={handleNavigate} />}
-              {activeScene === 'location' && <LocationSection />}
-              {activeScene === 'contact' && <ContactSection />}
+              {activeScene === 'about' && (
+                <section id="nosotros">
+                  <AboutSection />
+                </section>
+              )}
+              {activeScene === 'team' && (
+                <section id="equipo">
+                  <TeamSection onNavigate={handleNavigate} />
+                </section>
+              )}
+              {activeScene === 'services' && (
+                <section id="servicios">
+                  <ServiceCatalog onNavigate={handleNavigate} />
+                </section>
+              )}
+              {activeScene === 'booking' && (
+                <section id="agendar">
+                  <BookingSection onNavigate={handleNavigate} />
+                </section>
+              )}
+              {activeScene === 'ai-advisor' && (
+                <section id="asesor-ia">
+                  <StyleAdvisorSection onNavigate={handleNavigate} />
+                </section>
+              )}
+              {activeScene === 'location' && (
+                <section id="ubicacion">
+                  <LocationSection />
+                </section>
+              )}
+              {activeScene === 'contact' && (
+                <section id="contacto">
+                  <ContactSection />
+                </section>
+              )}
             </div>
           </main>
         </>
       )}
 
-
-
       <BottomNav
         activeScene={activeScene}
         onNavigate={handleNavigate}
       />
+
+      {/* Exit Confirmation Dialog */}
+      <AlertDialog open={isExitModalOpen} onOpenChange={setIsExitModalOpen}>
+        <AlertDialogContent className="bg-neutral-950/95 border border-primary/20 text-white backdrop-blur-2xl max-w-md mx-auto p-6 md:p-8 rounded-2xl shadow-2xl shadow-primary/5">
+          <div className="flex flex-col items-center text-center">
+            <div className="w-14 h-14 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center text-primary mb-4 animate-pulse-glow-cyan">
+              <Scissors className="w-7 h-7" />
+            </div>
+            <AlertDialogHeader className="space-y-2">
+              <AlertDialogTitle className="text-2xl font-headline font-bold text-center tracking-wide text-white">
+                ¿Ya te vas? ¡Tu estilo te espera! 💈
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-neutral-300 text-center text-sm leading-relaxed">
+                Estás a un paso de renovar tu look con los mejores barberos de Popayán. ¿Deseas quedarte para explorar los servicios o agendar tu cita?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+          </div>
+          <AlertDialogFooter className="flex flex-col-reverse sm:flex-row gap-3 mt-6">
+            <AlertDialogAction
+              onClick={handleConfirmExit}
+              className="sm:w-1/3 bg-transparent hover:bg-white/10 text-neutral-400 hover:text-white border border-white/10 transition-colors py-2.5 font-normal text-sm"
+            >
+              <LogOut className="w-4 h-4 mr-1.5 opacity-70" />
+              Salir
+            </AlertDialogAction>
+            <AlertDialogCancel
+              onClick={handleCancelExit}
+              className="sm:w-2/3 bg-primary text-black hover:bg-primary/90 font-bold shadow-lg shadow-primary/25 border-none transition-all py-2.5 text-sm"
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              Quedarme y Explorar
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

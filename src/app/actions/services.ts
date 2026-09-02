@@ -1,57 +1,9 @@
 'use server';
 
 import { db } from '@/lib/firebase';
-import { collection, doc, getDocs, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
-import { services as initialServices, Service } from '@/lib/data';
-
-// Helper to sanitize service object for Firestore
-const sanitizeService = (service: Service) => {
-    // Firestore doesn't support custom objects like Lucide icons directly. 
-    // We need to store the icon name as a string if it's not already.
-    // In our data.ts, 'icon' can be a component or string 'BeardIcon'.
-    // For simplicity in DB, we'll just store the string identifier if possible, 
-    // or we might need a mapping in the frontend. 
-    // For now, let's assume we store a string identifier for the icon.
-
-    let iconName = 'Scissors'; // Default
-    if (typeof service.icon === 'string') {
-        iconName = service.icon;
-    } else if ((service.icon as any).displayName) {
-        iconName = (service.icon as any).displayName;
-    }
-
-    return {
-        ...service,
-        icon: iconName,
-        // Ensure price is string as per interface, though number might be better for DB. 
-        // Interface says string, so we keep string.
-        price: service.price.toString(),
-    };
-};
-
-export async function seedServices() {
-    try {
-        const batch = writeBatch(db);
-        const servicesRef = collection(db, "services");
-
-        // Check if services already exist to avoid overwriting edits
-        const snapshot = await getDocs(servicesRef);
-        if (!snapshot.empty) {
-            return { success: false, message: "Services already seeded." };
-        }
-
-        initialServices.forEach(service => {
-            const docRef = doc(servicesRef, service.id);
-            batch.set(docRef, sanitizeService(service));
-        });
-
-        await batch.commit();
-        return { success: true, message: "Services seeded successfully." };
-    } catch (error) {
-        console.error("Error seeding services:", error);
-        return { success: false, message: "Failed to seed services." };
-    }
-}
+import { collection, doc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
+import { Service } from '@/lib/data';
+import { requireAdminSession } from '@/lib/auth';
 
 export async function getServicesFromDB(): Promise<Service[]> {
     try {
@@ -59,32 +11,102 @@ export async function getServicesFromDB(): Promise<Service[]> {
         const snapshot = await getDocs(servicesRef);
 
         if (snapshot.empty) {
-            // Fallback or auto-seed? Let's return empty and handle in UI
             return [];
         }
 
-        const services = snapshot.docs.map(doc => {
-            const data = doc.data();
-            // We need to map the icon string back to a component in the Frontend, 
-            // but here we just return the data. 
-            // The frontend will handle the icon mapping.
-            return data as Service;
+        const services: Service[] = [];
+        snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            services.push({
+                id: data.id || docSnap.id,
+                name: data.name,
+                price: data.price?.toString() || "0",
+                duration: Number(data.duration) || 60,
+                description: data.description || '',
+                icon: data.icon || 'Scissors',
+                mediaUrl: data.mediaUrl || '/multimedia/corte-autoridad.jpg',
+                mediaType: data.mediaType || 'image',
+                imageHint: data.imageHint || data.name || '',
+                popular: data.popular || false,
+                isSignature: data.isSignature || false,
+                rating: data.rating || 5.0,
+                reviewsCount: data.reviewsCount || 0,
+                accentColor: data.accentColor || '#39FF14',
+                included: data.included || [],
+            } as Service);
         });
 
         return services;
     } catch (error) {
-        console.error("Error fetching services:", error);
+        console.error("Error fetching services from Firestore:", error);
         return [];
     }
 }
 
-export async function updateService(id: string, data: { price?: string, duration?: number, name?: string, description?: string }) {
+export async function createService(data: { name: string; price: string; duration: number; description?: string; mediaUrl?: string }) {
     try {
+        await requireAdminSession();
+        if (!data.name || !data.price || !data.duration) {
+            return { success: false, message: "Nombre, precio y duración son obligatorios." };
+        }
+        const cleanSlug = data.name.toLowerCase()
+            .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+        const id = cleanSlug ? `${cleanSlug}-${Date.now().toString().slice(-4)}` : `service-${Date.now()}`;
+
         const serviceRef = doc(db, "services", id);
-        await updateDoc(serviceRef, data);
+        const newService = {
+            id,
+            name: data.name.trim(),
+            price: data.price.toString().replace(/\D/g, ''),
+            duration: Number(data.duration) || 60,
+            description: data.description?.trim() || '',
+            icon: 'Scissors',
+            mediaUrl: data.mediaUrl?.trim() || '/multimedia/corte-autoridad.jpg',
+            mediaType: 'image',
+            imageHint: data.name.toLowerCase(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        };
+
+        await setDoc(serviceRef, newService);
+        return { success: true, message: `Servicio '${data.name}' creado con éxito.` };
+    } catch (error: any) {
+        console.error("Error creating service:", error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return { success: false, message: `Error al crear el servicio: ${errorMsg}` };
+    }
+}
+
+export async function deleteService(id: string) {
+    try {
+        await requireAdminSession();
+        if (!id) return { success: false, message: "ID de servicio no válido." };
+        await deleteDoc(doc(db, "services", id));
+        return { success: true, message: "Servicio eliminado con éxito." };
+    } catch (error: any) {
+        console.error("Error deleting service:", error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return { success: false, message: `Error al eliminar el servicio: ${errorMsg}` };
+    }
+}
+
+export async function updateService(id: string, data: { price?: string, duration?: number, name?: string, description?: string, mediaUrl?: string }) {
+    try {
+        await requireAdminSession();
+        const serviceRef = doc(db, "services", id);
+
+        await setDoc(serviceRef, {
+            ...data,
+            id,
+            updatedAt: new Date(),
+        }, { merge: true });
+
         return { success: true, message: "Servicio actualizado correctamente." };
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error updating service:", error);
-        return { success: false, message: "Error al actualizar el servicio." };
+        const errorMsg = error instanceof Error ? error.message : (error?.message || String(error));
+        return { success: false, message: `Error al actualizar el servicio: ${errorMsg}` };
     }
 }

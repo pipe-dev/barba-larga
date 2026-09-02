@@ -15,7 +15,8 @@ import Image from 'next/image';
 
 import { addTransaction, getRecentTransactions, getFinancialSummary, addProduct, getProducts, deleteTransaction, deleteProduct, updateProduct, getCustomerAnalytics, addCustomer, deleteCustomers, getTeam } from '@/app/actions';
 import type { Transaction, FinancialSummary, Product, CustomerAnalytics, TeamMember } from '@/app/actions';
-import { services as allServices, Service } from '@/lib/data';
+import { getServicesFromDB } from '@/app/actions/services';
+import type { Service } from '@/lib/data';
 import { useToast } from "@/hooks/use-toast";
 import {
   ChartConfig,
@@ -1458,17 +1459,18 @@ export default function CashFlowPage() {
   const fetchData = React.useCallback(async () => {
     setIsLoading(true);
     try {
-      const [transactions, summaryData, products, customers, team] = await Promise.all([
+      const [transactions, summaryData, products, customers, team, dbServices] = await Promise.all([
         getRecentTransactions(),
         getFinancialSummary(),
         getProducts(),
         getCustomerAnalytics(),
         getTeam(),
+        getServicesFromDB(),
       ]);
       setInitialTransactions(transactions);
       setSummary(summaryData);
       setInitialProducts(products);
-      setInitialServices(allServices);
+      setInitialServices(dbServices || []);
       setInitialCustomers(customers);
       setInitialTeam(team);
     } catch (error) {
@@ -1481,14 +1483,7 @@ export default function CashFlowPage() {
 
 
   React.useEffect(() => {
-    const sessionAuth = sessionStorage.getItem('isAdminAuthenticated');
-    if (sessionAuth !== 'true') {
-      window.location.href = '/admin';
-      return;
-    }
-
     fetchData();
-
   }, [fetchData]);
 
   if (isLoading && !initialTeam.length) {

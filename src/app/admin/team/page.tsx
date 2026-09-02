@@ -14,6 +14,7 @@ import { getTeam, updateTeamMember, addTeamMember, toggleTeamMemberAvailability,
 import type { TeamMember } from '@/app/actions';
 import { useToast } from "@/hooks/use-toast";
 import { isValidImageUrl, getSafeImageUrl } from '@/lib/image-validation';
+import { ImageUploader } from '@/components/ui/image-uploader';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,9 +50,7 @@ const newTeamMemberFormSchema = z.object({
   email: z.string().email({ message: "Email inválido." }).nullable().optional(),
   role: z.string().min(3, { message: "El rol es requerido." }),
   description: z.string().min(10, { message: "La descripción debe tener al menos 10 caracteres." }),
-  imageUrl: z.string().url({ message: "URL inválida." }).refine((url) => isValidImageUrl(url), {
-    message: "La URL debe comenzar con http:// o https:// (no archivos locales).",
-  }),
+  imageUrl: z.string().min(1, { message: "Por favor, selecciona o sube una imagen." }),
   isAvailable: z.boolean().default(true),
   whatsapp: z.string().optional().or(z.literal("")),
 });
@@ -90,7 +89,23 @@ function AddTeamMemberForm({ onFormSubmit, onOpenChange }: { onFormSubmit: () =>
         <FormField control={form.control} name="whatsapp" render={({ field: { value, ...field } }) => (<FormItem> <FormLabel>WhatsApp (opcional, ej. 573001234567)</FormLabel> <FormControl><Input {...field} value={value ?? ""} name="whatsapp" type="tel" placeholder="Código de país + número (solo dígitos)" /></FormControl> <FormMessage /> </FormItem>)} />
         <FormField control={form.control} name="role" render={({ field }) => (<FormItem> <FormLabel>Rol</FormLabel> <FormControl><Input {...field} name="role" placeholder="Ej: Barbero, Estilista" /></FormControl> <FormMessage /> </FormItem>)} />
         <FormField control={form.control} name="description" render={({ field }) => (<FormItem> <FormLabel>Descripción</FormLabel> <FormControl><Textarea {...field} name="description" /></FormControl> <FormMessage /> </FormItem>)} />
-        <FormField control={form.control} name="imageUrl" render={({ field }) => (<FormItem> <FormLabel>URL de la Imagen</FormLabel> <FormControl><Input {...field} name="imageUrl" /></FormControl> <FormMessage /> </FormItem>)} />
+        <FormField
+          control={form.control}
+          name="imageUrl"
+          render={({ field }) => (
+            <FormItem>
+              <FormControl>
+                <ImageUploader
+                  label="Foto del Colaborador"
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              </FormControl>
+              <input type="hidden" name="imageUrl" value={field.value} />
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <FormField
           control={form.control}
           name="isAvailable"
@@ -126,9 +141,7 @@ const teamMemberSchema = z.object({
   name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
   email: z.string().email({ message: "Email inválido." }).nullable().optional().or(z.literal("")),
   description: z.string().min(10, { message: "La descripción debe tener al menos 10 caracteres." }),
-  imageUrl: z.string().url({ message: "URL inválida." }).refine((url) => isValidImageUrl(url), {
-    message: "La URL debe comenzar con http:// o https:// (no archivos locales).",
-  }),
+  imageUrl: z.string().min(1, { message: "Por favor, selecciona o sube una imagen." }),
   isAvailable: z.boolean().default(true),
   role: z.string(),
   whatsapp: z.string().optional().or(z.literal("")),
@@ -179,7 +192,23 @@ function EditTeamMemberForm({ member, onFormSubmit, onOpenChange }: { member: Te
         <FormField control={form.control} name="whatsapp" render={({ field: { value, ...field } }) => (<FormItem> <FormLabel>WhatsApp (opcional, ej. 573001234567)</FormLabel> <FormControl><Input {...field} value={value ?? ""} name="whatsapp" type="tel" placeholder="Código de país + número (solo dígitos)" /></FormControl> <FormMessage /> </FormItem>)} />
         <FormField control={form.control} name="role" render={({ field }) => (<FormItem> <FormLabel>Rol</FormLabel> <FormControl><Input {...field} name="role" /></FormControl> <FormMessage /> </FormItem>)} />
         <FormField control={form.control} name="description" render={({ field }) => (<FormItem> <FormLabel>Descripción</FormLabel> <FormControl><Textarea {...field} name="description" /></FormControl> <FormMessage /> </FormItem>)} />
-        <FormField control={form.control} name="imageUrl" render={({ field }) => (<FormItem> <FormLabel>URL de la Imagen</FormLabel> <FormControl><Input {...field} name="imageUrl" /></FormControl> <FormMessage /> </FormItem>)} />
+        <FormField
+          control={form.control}
+          name="imageUrl"
+          render={({ field }) => (
+            <FormItem>
+              <FormControl>
+                <ImageUploader
+                  label="Foto del Colaborador"
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              </FormControl>
+              <input type="hidden" name="imageUrl" value={field.value} />
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         <input type="hidden" name="isAvailable" value={form.getValues("isAvailable").toString()} />
 
@@ -267,11 +296,12 @@ export default function TeamPage() {
 
   React.useEffect(() => {
     const sessionAuth = sessionStorage.getItem('isAdminAuthenticated');
-    if (sessionAuth !== 'true') {
+    const sessionRole = sessionStorage.getItem('userRole');
+    if (sessionAuth !== 'true' || sessionRole !== 'admin') {
       window.location.href = '/admin';
-    } else {
-      fetchData();
+      return;
     }
+    fetchData();
   }, [fetchData]);
 
   const handleAvailabilityChange = async (id: string, newAvailability: boolean) => {

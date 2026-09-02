@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { services } from '@/lib/data';
+import { getServicesFromDB } from '@/app/actions/services';
 
 const outputSchema = z.object({
     recommendations: z.string().describe('Recomendación personalizada en texto plano.'),
@@ -18,14 +18,15 @@ INSTRUCCIONES:
 4. Termina con: "pregunta a tu asesor humano qué otros productos y servicios tienen para ti en el momento que estés en tu cita"
 
 REGLAS de servicios:
-- Si recomiendas color → sugiere "Coloración Estratégica" (ID: coloring)
-- Si recomiendas diseño → sugiere "Corte + Diseño y Cejas" (ID: haircut-design-eyebrows)
-- Si recomiendas corte + barba → sugiere "Experiencia Dominante" en vez de ambos por separado
+- Si recomiendas corte + barba → sugiere "Corte de cabello con Barba" (ID: haircut-beard) o "Barba combo" (ID: beard-combo)
+- Si recomiendas cejas → sugiere "Corte de cabello con ceja" (ID: haircut-eyebrows) o "Cejas con cuchilla" (ID: eyebrows)
+- Si recomiendas diseño → sugiere "Corte de cabello con diseño" (ID: haircut-design)
+- Si recomiendas mascarilla / exfoliación → sugiere "Corte de cabello más mascarilla de exfoliación" (ID: haircut-facial-mask)
+- Si recomiendas corte estándar → sugiere "Corte de cabello" (ID: haircut)
 
 TENDENCIAS 2025 (resumen):
 Hombre: degradado natural, texturizado, mullet moderno, faux hawk, french crop, corte militar
 Mujer: bobs, shaggy, capas, flequillos de cortina
-Color: mocha mousse, cobrizos, contouring capilar, rubio avellana, rojo cereza
 Diseño: microdiseños rapados, acabado natural y texturizado
 
 styleImageKey — elige UNO:
@@ -63,7 +64,8 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        const serviceCatalog = services.map(s => `${s.id}: ${s.name}`).join('\n');
+        const dbServices = await getServicesFromDB();
+        const serviceCatalog = dbServices.map(s => `${s.id}: ${s.name}`).join('\n');
         const userMessage = `Cliente: ${genderIdentity}\nPreferencias: ${stylePreferences}\n\nCatálogo (ID: Nombre):\n${serviceCatalog}`;
 
         console.log("🚀 Starting AI Style Advisor generation (Groq Stream)...");

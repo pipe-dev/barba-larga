@@ -8,91 +8,11 @@ export interface Service {
   description: string;
   price: string;
   duration: number; // Duration in minutes
-  icon: LucideIcon | 'BeardIcon';
+  icon?: LucideIcon | 'BeardIcon' | any;
   mediaUrl: string;
   mediaType: 'image' | 'video';
-  imageHint: string;
+  imageHint?: string;
 }
-
-export const services: Service[] = [
-  {
-    id: "haircut",
-    name: "Corte de cabello",
-    description: "Un corte preciso que define tu estilo y resalta tus mejores rasgos. Sal con una nueva actitud.",
-    price: "25000",
-    duration: 60,
-    icon: Scissors,
-    mediaUrl: "/multimedia/corte-autoridad.jpg",
-    mediaType: 'image',
-    imageHint: "male classic haircut"
-  },
-  {
-    id: "haircut-eyebrows",
-    name: "Corte de cabello con ceja",
-    description: "El look completo. Un corte impecable complementado con un perfilado de cejas profesional para enmarcar tu mirada.",
-    price: "26000",
-    duration: 70,
-    icon: Scissors,
-    mediaUrl: "/multimedia/haircut-eyebrows.png",
-    mediaType: 'image',
-    imageHint: "haircut and eyebrows"
-  },
-  {
-    id: "haircut-beard",
-    name: "Corte de cabello con Barba",
-    description: "La transformación total. Un corte de precisión y un diseño de barba que proyectan poder y sofisticación.",
-    price: "35000",
-    duration: 90,
-    icon: 'BeardIcon',
-    mediaUrl: "/multimedia/experiencia-dominante.jpg",
-    mediaType: 'image',
-    imageHint: "beard trim"
-  },
-  {
-    id: "haircut-design",
-    name: "Corte de cabello con diseño",
-    description: "Tu estilo, tu lienzo. Un corte de precisión acompañado de un diseño creativo para expresar tu individualidad.",
-    price: "30000",
-    duration: 80,
-    icon: PencilRuler,
-    mediaUrl: "/multimedia/corte-diseño-cejas.jpg",
-    mediaType: 'image',
-    imageHint: "hair design"
-  },
-  {
-    id: "haircut-facial-mask",
-    name: "Corte de cabello más mascarilla de exfoliación",
-    description: "Renueva tu look y tu piel. Un corte perfecto junto con una mascarilla que elimina impurezas y revitaliza tu rostro.",
-    price: "32000",
-    duration: 75,
-    icon: Droplets,
-    mediaUrl: "/multimedia/rostro-impecable.jpg",
-    mediaType: 'image',
-    imageHint: "facial treatment"
-  },
-  {
-    id: "beard-combo",
-    name: "Barba combo",
-    description: "Una barba impecable es tu mejor carta de presentación. Incluye limpieza, exfoliación y un delineado perfecto.",
-    price: "16000",
-    duration: 40,
-    icon: User,
-    mediaUrl: "/multimedia/barba.jpg",
-    mediaType: 'image',
-    imageHint: "beard detailing"
-  },
-  {
-    id: "eyebrows",
-    name: "Cejas con cuchilla",
-    description: "Define y perfecciona tus cejas con la precisión de la cuchilla para una mirada más nítida y marcada.",
-    price: "4000",
-    duration: 20,
-    icon: PencilRuler,
-    mediaUrl: "/multimedia/haircut-eyebrows.png",
-    mediaType: 'image',
-    imageHint: "eyebrow shaping"
-  }
-];
 
 export const SLOT_INTERVAL_MINUTES = 10;
 export const MIN_GAP_MINUTES = 20;
@@ -126,16 +46,62 @@ export const getEndTimeOptions = (date: Date): string[] => {
   return allTimes;
 };
 
-export const getServiceDetails = (ids: string) => {
-  if (!ids) return { names: 'Servicio Desconocido', totalPrice: 0 };
-  const serviceIds = ids.split(',');
-  const chosenServices = services.filter(s => serviceIds.includes(s.id.trim()));
+export const timeToMinutes = (timeStr: string): number => {
+  if (!timeStr) return -1;
+  const normalized = timeStr.trim().toUpperCase();
+  const match = normalized.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (!match) return -1;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const modifier = match[3];
+  if (hours < 1 || hours > 12 || minutes < 0 || minutes > 59) return -1;
+  if (modifier === 'PM' && hours < 12) hours += 12;
+  if (modifier === 'AM' && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+};
+
+export const minutesToTimeStr = (totalMins: number): string => {
+  if (totalMins < 0) return "00:00 AM";
+  const h24 = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  const ampm = h24 >= 12 ? 'PM' : 'AM';
+  let h12 = h24 % 12;
+  if (h12 === 0) h12 = 12;
+  return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
+};
+
+export const doIntervalsOverlap = (startA: number, endA: number, startB: number, endB: number): boolean => {
+  return Math.max(startA, startB) < Math.min(endA, endB);
+};
+
+export const getServiceDuration = (ids: string, customServices?: Service[]): number => {
+  if (!ids) return 60; // Safe default
+  const list = customServices && customServices.length > 0 ? customServices : [];
+  if (list.length === 0) return 60;
+  const serviceIds = ids.split(',').map(id => id.trim()).filter(Boolean);
+  const chosenServices = list.filter(s => serviceIds.includes(s.id));
+  const total = chosenServices.reduce((acc, s) => acc + (s.duration || 60), 0);
+  return total > 0 ? total : 60;
+};
+
+export const getServiceDetails = (ids: string, customServices?: Service[]) => {
+  if (!ids) return { names: 'Servicio', totalPrice: 0, totalDuration: 60 };
+  const list = customServices && customServices.length > 0 ? customServices : [];
+  const serviceIds = ids.split(',').map(id => id.trim()).filter(Boolean);
+  const chosenServices = list.filter(s => serviceIds.includes(s.id));
+
+  if (chosenServices.length === 0) {
+    return { names: ids, totalPrice: 0, totalDuration: 60 };
+  }
 
   const names = chosenServices.map(s => s.name).join(', ');
   const totalPrice = chosenServices.reduce((total, s) => {
-    const price = parseInt(s.price.replace(/\D/g, ''), 10) || 0;
+    const rawPrice = s.price !== undefined && s.price !== null ? String(s.price) : '0';
+    const price = parseInt(rawPrice.replace(/\D/g, ''), 10) || 0;
     return total + price;
   }, 0);
+  const totalDuration = chosenServices.reduce((total, s) => total + (s.duration || 60), 0);
 
-  return { names, totalPrice };
+  return { names, totalPrice, totalDuration };
 };
+

@@ -4,9 +4,10 @@
 
 import * as React from 'react';
 import { useActionState } from 'react';
-import { getNotifications, getAllAppointments, verifyAdminPassword, deleteAppointment, confirmAppointmentAsSale, getTeam, reactivateAppointment, bookAppointment, deleteBlockedSlot, deleteAllBlockedSlots, blockTimeSlot, getAvailableTimesForDate, addNotification, updateNotification, deleteNotification } from '@/app/actions';
+import { getNotifications, getAllAppointments, verifyAdminPassword, logoutAdmin, checkAdminSession, deleteAppointment, confirmAppointmentAsSale, getTeam, reactivateAppointment, bookAppointment, deleteBlockedSlot, deleteAllBlockedSlots, blockTimeSlot, getAvailableTimesForDate, addNotification, updateNotification, deleteNotification } from '@/app/actions';
 import type { Appointment, TeamMember, Notification as NotificationType } from '@/app/actions';
-import { services as allServices, Service, getBaseAvailableTimes, getEndTimeOptions, getServiceDetails } from '@/lib/data';
+import { Service, getBaseAvailableTimes, getEndTimeOptions, getServiceDetails, timeToMinutes, minutesToTimeStr, doIntervalsOverlap, getServiceDuration } from '@/lib/data';
+import { getServicesFromDB } from '@/app/actions/services';
 import { format, parseISO, parse } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -64,7 +65,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, LogOut, User, Scissors, CheckCircle, MoreVertical, RefreshCw, Lock, Calendar as CalendarIcon, DollarSign, History, ArrowLeft, PlusCircle, Trash2, Download, Pencil, Briefcase, Users2, Bell } from 'lucide-react';
+import { Loader2, LogOut, User, Scissors, CheckCircle, MoreVertical, RefreshCw, Lock, Calendar as CalendarIcon, DollarSign, History, ArrowLeft, PlusCircle, Trash2, Download, Pencil, Briefcase, Users2, Bell, Terminal } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from "@/hooks/use-toast";
 import { cn } from '@/lib/utils';
@@ -238,6 +239,7 @@ function BlockTimeDialog({ team, onDataChange, onOpenChange, initialData }: { te
                 className="space-y-4"
             >
                 <input type="hidden" name="date" value={date ? format(date, "yyyy-MM-dd") : ""} />
+                <input type="hidden" name="barberId" value={barberId} />
 
                 <div className="space-y-2">
                     <Label htmlFor="barberId">Colaborador</Label>
@@ -419,6 +421,8 @@ function AddAppointmentDialog({ team, onDataChange, onOpenChange, initialData }:
 
     // UI state
     const [bookedTimes, setBookedTimes] = React.useState<string[]>([]);
+    const [bookedIntervals, setBookedIntervals] = React.useState<{ startMin: number; endMin: number }[]>([]);
+    const [gapSlots, setGapSlots] = React.useState<string[]>([]);
     const [isFetchingTimes, setIsFetchingTimes] = React.useState(false);
 
     const fetchBookedTimes = React.useCallback((forDate: Date, forBarberId: string) => {
@@ -427,8 +431,10 @@ function AddAppointmentDialog({ team, onDataChange, onOpenChange, initialData }:
         const dateString = format(forDate, "yyyy-MM-dd");
         getAvailableTimesForDate(dateString, forBarberId)
             .then(result => {
-                const formattedTimes = result.blocked.map(t => t.toUpperCase().replace(/\s/g, ''));
+                const formattedTimes = (result.blocked || []).map(t => t.toUpperCase().replace(/\s/g, ''));
                 setBookedTimes(formattedTimes);
+                setGapSlots(result.gaps || []);
+                setBookedIntervals(result.intervals || []);
             })
             .catch(console.error)
             .finally(() => setIsFetchingTimes(false));
@@ -440,28 +446,76 @@ function AddAppointmentDialog({ team, onDataChange, onOpenChange, initialData }:
         }
     }, [date, barberId, fetchBookedTimes]);
 
+    const [services, setServices] = React.useState<Service[]>([]);
+
+    React.useEffect(() => {
+        getServicesFromDB().then(res => {
+            if (res && res.length > 0) setServices(res);
+        }).catch(console.error);
+    }, []);
+
     const { morning, afternoon, night } = React.useMemo(() => {
         if (!date) return { morning: [], afternoon: [], night: [] };
         const baseTimes = getBaseAvailableTimes(date);
+        const totalDuration = getServiceDuration(serviceIds.join(','), services);
 
-        const filterBooked = (times: string[]) =>
-            times.filter(time => !bookedTimes.includes(time.replace(/\s/g, '').toUpperCase()));
+        const isSlotFit = (startTimeStr: string) => {
+            const startMinutes = timeToMinutes(startTimeStr);
+            if (startMinutes === -1) return false;
+            const endMinutes = startMinutes + totalDuration;
 
-        let availableMorning = filterBooked(baseTimes.morning);
-        let availableAfternoon = filterBooked(baseTimes.afternoon);
-        let availableNight = filterBooked(baseTimes.night);
+            // Check Business Hours (8:00 AM = 480 mins, 9:00 PM = 1260 mins)
+            if (startMinutes < 480 || endMinutes > 1260) return false;
 
-        if (format(date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')) {
-            const now = new Date();
-            const timeStringToDate = (timeStr: string) => parse(timeStr, "hh:mm a", new Date());
-            const filterPastTimes = (times: string[]) => times.filter(t => timeStringToDate(t) > now);
+            // Check exact interval collision against all booked intervals
+            for (const interval of bookedIntervals) {
+                if (doIntervalsOverlap(startMinutes, endMinutes, interval.startMin, interval.endMin)) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        let availableMorning = baseTimes.morning.filter(isSlotFit);
+        let availableAfternoon = baseTimes.afternoon.filter(isSlotFit);
+        let availableNight = baseTimes.night.filter(isSlotFit);
+
+        // Merge gap slots
+        for (const gap of gapSlots) {
+            if (!isSlotFit(gap)) continue;
+            const mins = timeToMinutes(gap);
+            if (mins === -1) continue;
+
+            if (mins < 12 * 60) {
+                availableMorning.push(gap);
+            } else if (mins < 18 * 60) {
+                availableAfternoon.push(gap);
+            } else {
+                availableNight.push(gap);
+            }
+        }
+
+        // Deduplicate and sort
+        const sortByTime = (a: string, b: string) => timeToMinutes(a) - timeToMinutes(b);
+        availableMorning = Array.from(new Set(availableMorning)).sort(sortByTime);
+        availableAfternoon = Array.from(new Set(availableAfternoon)).sort(sortByTime);
+        availableNight = Array.from(new Set(availableNight)).sort(sortByTime);
+
+        const todayBogota = new Date().toLocaleDateString("en-CA", { timeZone: "America/Bogota" });
+        const selectedDateStr = format(date, 'yyyy-MM-dd');
+
+        if (selectedDateStr === todayBogota) {
+            const bogotaTimeStr = new Date().toLocaleTimeString("en-US", { timeZone: "America/Bogota", hour12: false });
+            const [h, m] = bogotaTimeStr.split(":").map(Number);
+            const nowMinutes = (h || 0) * 60 + (m || 0);
+            const filterPastTimes = (times: string[]) => times.filter(t => timeToMinutes(t) > nowMinutes);
 
             availableMorning = filterPastTimes(availableMorning);
             availableAfternoon = filterPastTimes(availableAfternoon);
             availableNight = filterPastTimes(availableNight);
         }
         return { morning: availableMorning, afternoon: availableAfternoon, night: availableNight };
-    }, [date, bookedTimes]);
+    }, [date, bookedIntervals, gapSlots, serviceIds, services]);
 
     const hasAvailableTimes = morning.length > 0 || afternoon.length > 0 || night.length > 0;
 
@@ -489,7 +543,7 @@ function AddAppointmentDialog({ team, onDataChange, onOpenChange, initialData }:
         }
     }, [state, toast, onDataChange, onOpenChange]);
 
-    const serviceOptions = allServices.map(s => ({ label: s.name, value: s.id }));
+    const serviceOptions = services.map(s => ({ label: `${s.name} ($${parseInt(String(s.price).replace(/\D/g, '') || '0').toLocaleString('es-CO')})`, value: s.id }));
 
     return (
         <DialogContent className="sm:max-w-[625px]">
@@ -503,6 +557,7 @@ function AddAppointmentDialog({ team, onDataChange, onOpenChange, initialData }:
                 <input type="hidden" name="date" value={date ? format(date, "yyyy-MM-dd") : ""} />
                 <input type="hidden" name="service" value={serviceIds.join(',')} />
                 <input type="hidden" name="time" value={time} />
+                <input type="hidden" name="barberId" value={barberId} />
 
                 <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-2 sm:gap-4">
                     <Label htmlFor="barberId" className="sm:text-right">Barbero</Label>
@@ -835,6 +890,42 @@ function AppointmentsDashboard({
     const [selectedCalendarBarber, setSelectedCalendarBarber] = React.useState<string>('all');
     const [view, setView] = React.useState<'calendar' | 'completed'>('calendar');
     const [selectedAppointment, setSelectedAppointment] = React.useState<Appointment | null>(null);
+    const [services, setServices] = React.useState<Service[]>([]);
+
+    React.useEffect(() => {
+        getServicesFromDB().then(res => {
+            if (res && res.length > 0) setServices(res);
+        }).catch(console.error);
+    }, []);
+
+    React.useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const hash = window.location.hash.toLowerCase();
+            if (hash === '#completadas') {
+                setView('completed');
+            } else {
+                setView('calendar');
+            }
+
+            const handlePopState = (e: PopStateEvent) => {
+                const targetView = e.state?.view || (window.location.hash === '#completadas' ? 'completed' : 'calendar');
+                setView(targetView);
+            };
+
+            window.addEventListener('popstate', handlePopState);
+            return () => window.removeEventListener('popstate', handlePopState);
+        }
+    }, []);
+
+    const handleViewChange = (newView: 'calendar' | 'completed') => {
+        setView(newView);
+        if (typeof window !== 'undefined') {
+            const newHash = newView === 'completed' ? '#completadas' : '#calendario';
+            if (window.location.hash !== newHash) {
+                window.history.pushState({ view: newView }, '', newHash);
+            }
+        }
+    };
 
     // Dialog visibility states
     const [isConfirmSaleOpen, setIsConfirmSaleOpen] = React.useState(false);
@@ -878,21 +969,52 @@ function AppointmentsDashboard({
 
     const handleUpdateAppointment = async (appointment: Appointment) => {
         try {
+            const startMin = timeToMinutes(appointment.time);
+            let endMin = appointment.endTime ? timeToMinutes(appointment.endTime) : -1;
+            if (endMin === -1 || endMin <= startMin) {
+                endMin = startMin + 60;
+            }
+
+            // Check if moving to this time slot causes a collision with another appointment for the same barber
+            const hasConflict = initialAppointments.some(apt => {
+                if (apt.id === appointment.id) return false;
+                if (apt.id?.startsWith('lock_') || (apt as any).type === 'lock') return false;
+                if ((apt.status as string) === 'cancelled') return false;
+                if (apt.barberId !== appointment.barberId || apt.date !== appointment.date) return false;
+
+                const otherStart = timeToMinutes(apt.time);
+                if (otherStart === -1) return false;
+                let otherEnd = apt.endTime ? timeToMinutes(apt.endTime) : -1;
+                if (otherEnd === -1 || otherEnd <= otherStart) otherEnd = otherStart + 60;
+
+                return doIntervalsOverlap(startMin, endMin, otherStart, otherEnd);
+            });
+
+            if (hasConflict) {
+                toast({
+                    title: "Sobrebooking Evitado",
+                    description: "No puedes mover la cita a esta hora porque se cruza con otra cita o bloqueo del barbero.",
+                    variant: "destructive"
+                });
+                onDataChange();
+                return;
+            }
+
             const { db } = await import('@/lib/firebase');
             const { doc, updateDoc } = await import('firebase/firestore');
             await updateDoc(doc(db, "appointments", appointment.id), {
                 date: appointment.date,
                 time: appointment.time,
-                endTime: appointment.endTime,
+                endTime: appointment.endTime || minutesToTimeStr(endMin),
                 barberId: appointment.barberId
             });
-            toast({ title: "Éxito", description: "Cita actualizada al arrastrar y soltar." });
+            toast({ title: "Cita actualizada", description: "Cita reprogramada sin conflictos." });
             onDataChange();
         } catch (e) {
             toast({ title: "Error", description: "No se pudo actualizar la cita.", variant: "destructive" });
             onDataChange();
         }
-    }
+    };
 
     const filteredAppointments = React.useMemo(() =>
         selectedCalendarBarber === 'all'
@@ -1024,9 +1146,15 @@ function AppointmentsDashboard({
                                                                         Sistema de Caja
                                                                     </Link>
                                                                 </DropdownMenuItem>
+                                                                <DropdownMenuItem asChild>
+                                                                    <Link href="/admin/system-logs">
+                                                                        <Terminal className="mr-2 h-4 w-4 text-primary" />
+                                                                        Logs y Telemetría
+                                                                    </Link>
+                                                                </DropdownMenuItem>
                                                             </>
                                                         )}
-                                                        <DropdownMenuItem onClick={() => setView('completed')}>
+                                                        <DropdownMenuItem onClick={() => handleViewChange('completed')}>
                                                             <History className="mr-2 h-4 w-4" />
                                                             Ver Citas Completadas
                                                         </DropdownMenuItem>
@@ -1054,6 +1182,7 @@ function AppointmentsDashboard({
                                 <AppointmentCalendar
                                     appointments={filteredAppointments}
                                     team={team}
+                                    services={services}
                                     onAppointmentUpdate={handleUpdateAppointment}
                                     onSelectEvent={handleSelectEvent}
                                     onSelectSlot={handleSelectSlot}
@@ -1066,7 +1195,7 @@ function AppointmentsDashboard({
                     <>
                         <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                             <div>
-                                <Button variant="ghost" size="sm" onClick={() => setView('calendar')} className="mb-2 -ml-4">
+                                <Button variant="ghost" size="sm" onClick={() => handleViewChange('calendar')} className="mb-2 -ml-4">
                                     <ArrowLeft className="mr-2 h-4 w-4" /> Volver al Calendario
                                 </Button>
                                 <CardTitle>Citas Completadas</CardTitle>
@@ -1249,15 +1378,23 @@ export default function AdminPage() {
     }, []);
 
     React.useEffect(() => {
-        const sessionAuth = sessionStorage.getItem('isAdminAuthenticated');
-        const sessionRole = sessionStorage.getItem('userRole') as 'admin' | 'barber' | null;
-        if (sessionAuth === 'true' && sessionRole) {
-            setIsAuthenticated(true);
-            setUserRole(sessionRole);
-            loadData();
-        } else {
+        checkAdminSession().then(session => {
+            if (session.isAuthenticated && session.role) {
+                setIsAuthenticated(true);
+                setUserRole(session.role);
+                sessionStorage.setItem('isAdminAuthenticated', 'true');
+                sessionStorage.setItem('userRole', session.role);
+                loadData();
+            } else {
+                sessionStorage.removeItem('isAdminAuthenticated');
+                sessionStorage.removeItem('userRole');
+                setIsAuthenticated(false);
+                setUserRole(null);
+                setIsLoading(false);
+            }
+        }).catch(() => {
             setIsLoading(false);
-        }
+        });
     }, [loadData]);
 
     const handleLoginSuccess = (role: 'admin' | 'barber') => {
@@ -1266,7 +1403,8 @@ export default function AdminPage() {
         loadData();
     };
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        await logoutAdmin();
         sessionStorage.removeItem('isAdminAuthenticated');
         sessionStorage.removeItem('userRole');
         setIsAuthenticated(false);

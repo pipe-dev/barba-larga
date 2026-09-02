@@ -1,6 +1,10 @@
 
+if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
+
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore, getFirestore } from "firebase/firestore";
 
 // IMPORTANT: These would be the details from your NEW Firebase project.
 const firebaseConfig = {
@@ -16,6 +20,14 @@ const firebaseConfig = {
 // Initialize Firebase
 // This pattern prevents re-initializing the app on hot reloads.
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const db = getFirestore(app);
+
+let db: ReturnType<typeof getFirestore>;
+try {
+  db = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+  });
+} catch {
+  db = getFirestore(app);
+}
 
 export { app, db };

@@ -12,7 +12,8 @@ import { Sparkles, Bot, Loader2, Instagram, Facebook, Play, Pause } from "lucide
 import type { AIStyleAdvisorOutput } from "@/ai/flows/ai-style-advisor";
 import { aiStyleAdvisor } from "@/ai/flows/ai-style-advisor";
 import { useBooking } from "@/hooks/use-booking";
-import { services } from "@/lib/data";
+import { getServicesFromDB } from "@/app/actions/services";
+import type { Service } from "@/lib/data";
 import { getStyleImage } from "@/lib/style-images";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -160,12 +161,20 @@ export function StyleAdvisorSection({ onNavigate }: { onNavigate: (scene: Scene)
     }
   }, [isLoading]);
 
+  const [dbServices, setDbServices] = React.useState<Service[]>([]);
+
+  React.useEffect(() => {
+    getServicesFromDB().then(res => {
+      if (res && res.length > 0) setDbServices(res);
+    }).catch(console.error);
+  }, []);
+
   const recommendedServices = React.useMemo(() => {
     if (!recommendation?.suggestedServiceIds) return [];
     return recommendation.suggestedServiceIds
-      .map(id => services.find(s => s.id === id))
-      .filter((s): s is (typeof services)[0] => !!s);
-  }, [recommendation]);
+      .map(id => dbServices.find(s => s.id === id))
+      .filter((s): s is Service => !!s);
+  }, [recommendation, dbServices]);
 
   const styleImage = React.useMemo(() => {
     if (!recommendation?.styleImageKey) return null;
