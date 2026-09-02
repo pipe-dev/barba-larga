@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getServicesFromDB } from '@/app/actions/services';
+import { aiStyleAdvisor } from '@/ai/flows/ai-style-advisor';
 
 const outputSchema = z.object({
     recommendations: z.string().describe('Recomendación personalizada en texto plano.'),
@@ -45,22 +46,34 @@ export const maxDuration = 60; // Allow up to 60 seconds for AI generation
 
 export async function POST(req: NextRequest) {
     try {
-        const GROQ_API_KEY = process.env.GROQ_API_KEY;
-
-        if (!GROQ_API_KEY) {
-            console.error("❌ GROQ_API_KEY is missing in environment variables!");
-            return new Response(JSON.stringify({ error: 'Configuración de IA faltante' }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' },
-            });
-        }
-
         const { genderIdentity, stylePreferences } = await req.json();
 
         if (!genderIdentity || !stylePreferences) {
             return new Response(JSON.stringify({ error: 'Missing required fields' }), {
                 status: 400,
                 headers: { 'Content-Type': 'application/json' },
+            });
+        }
+
+        const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+        if (!GROQ_API_KEY) {
+            console.log("ℹ️ GROQ_API_KEY not set, activating built-in expert stylist engine.");
+            const fallbackAdvice = await aiStyleAdvisor({ genderIdentity, stylePreferences });
+            const encoder = new TextEncoder();
+            const readableStream = new ReadableStream({
+                start(controller) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ partial: fallbackAdvice.recommendations, accumulated: fallbackAdvice.recommendations })}\n\n`));
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, result: fallbackAdvice })}\n\n`));
+                    controller.close();
+                }
+            });
+            return new Response(readableStream, {
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                },
             });
         }
 
@@ -89,7 +102,23 @@ export async function POST(req: NextRequest) {
         });
 
         if (!response.ok || !response.body) {
-            throw new Error(`Groq API error: ${response.status}`);
+            console.warn(`⚠️ Groq API responded with status ${response.status}, falling back to built-in stylist.`);
+            const fallbackAdvice = await aiStyleAdvisor({ genderIdentity, stylePreferences });
+            const encoder = new TextEncoder();
+            const readableStream = new ReadableStream({
+                start(controller) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ partial: fallbackAdvice.recommendations, accumulated: fallbackAdvice.recommendations })}\n\n`));
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, result: fallbackAdvice })}\n\n`));
+                    controller.close();
+                }
+            });
+            return new Response(readableStream, {
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                },
+            });
         }
 
         const reader = response.body.getReader();
