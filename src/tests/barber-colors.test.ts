@@ -15,7 +15,7 @@ const mockTeam: TeamMember[] = [
         email: 'alan@barbalarga.com',
         role: 'Barbero',
         description: 'Barbero principal',
-        imageUrl: '/multimedia/nuestro-equipo-alan.jpg',
+        imageUrl: 'https://i.ibb.co/XZHYyLFY/nuestro-equipo-alan.webp',
         isAvailable: true,
         color: '#2563eb', // Blue
     },
@@ -25,7 +25,7 @@ const mockTeam: TeamMember[] = [
         email: 'carlos@barbalarga.com',
         role: 'Barbero',
         description: 'Nuevo barbero',
-        imageUrl: '/multimedia/logo-barber.jpg',
+        imageUrl: 'https://i.ibb.co/k2TL19sp/logo-barber.jpg',
         isAvailable: true,
         color: '#e11d48', // Rose
     },

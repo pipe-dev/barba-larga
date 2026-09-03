@@ -382,7 +382,7 @@ export default function TeamPage() {
                     // Fallback happens via getSafeImageUrl for initial render, 
                     // but for runtime load errors we can hide it or show placeholder
                     const target = e.target as HTMLImageElement;
-                    target.src = "/multimedia/logo-barber.jpg";
+                    target.src = "https://i.ibb.co/k2TL19sp/logo-barber.jpg";
                   }}
                 />
               </div>

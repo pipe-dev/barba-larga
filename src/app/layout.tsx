@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   description: "Reserva tu cita en la barbería Barba Larga.",
   manifest: "/manifest.json",
   icons: {
-    icon: "/multimedia/logo-barber.jpg",
+    icon: "https://i.ibb.co/k2TL19sp/logo-barber.jpg",
   },
 };
 

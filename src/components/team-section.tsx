@@ -51,7 +51,7 @@ const TeamMemberCard = ({ member, isSelected, onSelect }: { member: TeamMemberTy
             data-ai-hint={member.imageHint}
             onError={(e) => {
               const target = e.target as HTMLImageElement;
-              target.src = "/multimedia/logo-barber.jpg";
+              target.src = "https://i.ibb.co/k2TL19sp/logo-barber.jpg";
             }}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent" />
@@ -82,7 +82,7 @@ const TeamMemberCard = ({ member, isSelected, onSelect }: { member: TeamMemberTy
               className="object-cover scale-125 blur-lg brightness-50"
               onError={(e) => {
                 const target = e.target as HTMLImageElement;
-                target.src = "/multimedia/logo-barber.jpg";
+                target.src = "https://i.ibb.co/k2TL19sp/logo-barber.jpg";
               }}
             />
             {/* Contenedor con efecto de vidrio */}
