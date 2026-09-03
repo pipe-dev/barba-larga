@@ -58,12 +58,20 @@ export async function POST(req: NextRequest) {
         const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
         if (!GROQ_API_KEY) {
-            console.log("ℹ️ GROQ_API_KEY not set, activating built-in expert stylist engine.");
+            console.log("ℹ️ GROQ_API_KEY not set, activating dynamic expert stylist engine with realistic streaming.");
             const fallbackAdvice = await aiStyleAdvisor({ genderIdentity, stylePreferences });
             const encoder = new TextEncoder();
+            const words = fallbackAdvice.recommendations.split(' ');
+
             const readableStream = new ReadableStream({
-                start(controller) {
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ partial: fallbackAdvice.recommendations, accumulated: fallbackAdvice.recommendations })}\n\n`));
+                async start(controller) {
+                    let accumulated = '';
+                    for (let i = 0; i < words.length; i++) {
+                        const token = (i === 0 ? '' : ' ') + words[i];
+                        accumulated += token;
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ partial: token, accumulated })}\n\n`));
+                        await new Promise(r => setTimeout(r, 20));
+                    }
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, result: fallbackAdvice })}\n\n`));
                     controller.close();
                 }
