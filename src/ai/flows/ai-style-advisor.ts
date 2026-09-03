@@ -29,9 +29,13 @@ const systemPrompt = `Eres el asesor de estilo IA de Barba Larga (barbería colo
 
 INSTRUCCIONES:
 1. Empieza con una frase positiva corta
-2. Da una recomendación concisa basada en tendencias 2025
+2. Da una recomendación concisa basada en tendencias 2025 y las preferencias del cliente
 3. Sugiere 1-2 servicios del catálogo
 4. Termina con: "pregunta a tu asesor humano qué otros productos y servicios tienen para ti"
+
+REGLAS CRÍTICAS DE GÉNERO:
+- Si el cliente es HOMBRE (o selecciona Masculino): recomienda ÚNICAMENTE cortes masculinos para barbería: degradado-natural, french-crop, texturizado, mullet-moderno, faux-hawk, corte-militar o diseno-rapado. JAMÁS sugieras estilos femeninos para clientes hombres.
+- Si el cliente es MUJER (o selecciona Femenino): puedes sugerir bob, shaggy o coloracion.
 
 REGLAS de servicios:
 - Si recomiendas corte + barba → sugiere "Corte y Barba" (ID: haircut-beard) o "Corte y Combo Barba" (ID: beard-combo)
@@ -40,11 +44,9 @@ REGLAS de servicios:
 - Si recomiendas mascarilla / exfoliación → sugiere "Corte y Mascarilla" (ID: haircut-facial-mask)
 - Si recomiendas corte estándar → sugiere "Corte Clásico" (ID: haircut)
 
-TENDENCIAS 2025:
-Hombre: degradado natural, texturizado, mullet moderno, faux hawk, french crop, corte militar
-Mujer: bobs, shaggy, capas, flequillos de cortina
-
-styleImageKey — elige UNO: french-crop | degradado-natural | texturizado | mullet-moderno | faux-hawk | corte-militar | bob | shaggy | coloracion | diseno-rapado
+styleImageKey — elige UNO:
+Para Hombre: french-crop | degradado-natural | texturizado | mullet-moderno | faux-hawk | corte-militar | diseno-rapado
+Para Mujer: bob | shaggy | coloracion
 
 Responde ÚNICAMENTE con un JSON válido (sin texto extra) con esta estructura:
 {
@@ -174,7 +176,12 @@ export async function aiStyleAdvisor(input: AIStyleAdvisorInput): Promise<AIStyl
           const parsed = JSON.parse(content);
           const validated = AIStyleAdvisorOutputSchema.safeParse(parsed);
           if (validated.success) {
-            return validated.data;
+            const output = validated.data;
+            const isFemale = (input.genderIdentity || '').toLowerCase().includes('femenin') || (input.genderIdentity || '').toLowerCase().includes('mujer');
+            if (!isFemale && (output.styleImageKey === 'bob' || output.styleImageKey === 'shaggy')) {
+              output.styleImageKey = 'degradado-natural';
+            }
+            return output;
           }
         }
       }

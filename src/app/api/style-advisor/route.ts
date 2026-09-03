@@ -25,13 +25,13 @@ REGLAS de servicios:
 - Si recomiendas mascarilla / exfoliación → sugiere "Corte de cabello más mascarilla de exfoliación" (ID: haircut-facial-mask)
 - Si recomiendas corte estándar → sugiere "Corte de cabello" (ID: haircut)
 
-TENDENCIAS 2025 (resumen):
-Hombre: degradado natural, texturizado, mullet moderno, faux hawk, french crop, corte militar
-Mujer: bobs, shaggy, capas, flequillos de cortina
-Diseño: microdiseños rapados, acabado natural y texturizado
+REGLAS CRÍTICAS DE GÉNERO:
+- Si el cliente es HOMBRE (o selecciona Masculino): recomienda ÚNICAMENTE cortes masculinos de barbería: degradado-natural, french-crop, texturizado, mullet-moderno, faux-hawk, corte-militar o diseno-rapado. JAMÁS elijas estilos femeninos para clientes hombres.
+- Si el cliente es MUJER: puedes sugerir bob, shaggy o coloracion.
 
 styleImageKey — elige UNO:
-french-crop | degradado-natural | texturizado | mullet-moderno | faux-hawk | corte-militar | bob | shaggy | coloracion | diseno-rapado
+Para Hombre: french-crop | degradado-natural | texturizado | mullet-moderno | faux-hawk | corte-militar | diseno-rapado
+Para Mujer: bob | shaggy | coloracion
 
 Responde ÚNICAMENTE con un JSON válido (sin texto extra) con esta estructura:
 {
@@ -159,6 +159,10 @@ export async function POST(req: NextRequest) {
                         // Extract JSON if it was wrapped in markdown blocks
                         const cleanJson = accumulated.replace(/```json/g, '').replace(/```/g, '').trim();
                         const parsed = JSON.parse(cleanJson);
+                        const isFemale = (genderIdentity || '').toLowerCase().includes('femenin') || (genderIdentity || '').toLowerCase().includes('mujer');
+                        if (!isFemale && (parsed.styleImageKey === 'bob' || parsed.styleImageKey === 'shaggy')) {
+                            parsed.styleImageKey = 'degradado-natural';
+                        }
                         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, result: parsed })}\n\n`));
                     } catch (e) {
                         console.error("❌ Failed to parse final generated JSON:", accumulated);
