@@ -64,7 +64,7 @@ function normalizeText(str: string | null | undefined): string {
     .trim();
 }
 
-export function generateExpertRuleBasedAdvice(input: AIStyleAdvisorInput): AIStyleAdvisorOutput {
+export async function generateExpertRuleBasedAdvice(input: AIStyleAdvisorInput): Promise<AIStyleAdvisorOutput> {
   const rawGender = input.genderIdentity || '';
   const rawPrefs = input.stylePreferences || '';
   const gender = normalizeText(rawGender);
