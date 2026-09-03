@@ -290,6 +290,7 @@ export function StyleAdvisorSection({ onNavigate }: { onNavigate: (scene: Scene)
                       src={styleImage.path}
                       alt={styleImage.label}
                       fill
+                      unoptimized
                       className="object-cover"
                       sizes="(max-width: 768px) 100vw, 50vw"
                     />

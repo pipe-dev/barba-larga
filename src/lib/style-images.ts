@@ -17,44 +17,44 @@ export type StyleImageKey =
 
 export const styleImages: Record<StyleImageKey, { path: string; label: string }> = {
     'french-crop': {
-        path: '/multimedia/styles/french-crop.jpg',
+        path: 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=800&auto=format&fit=crop&q=80',
         label: 'French Crop',
     },
     'degradado-natural': {
-        path: '/multimedia/styles/degradado-natural.jpg',
-        label: 'Degradado Natural',
+        path: 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=800&auto=format&fit=crop&q=80',
+        label: 'Degradado Natural (Fade)',
     },
     'texturizado': {
-        path: '/multimedia/styles/texturizado.jpg',
+        path: 'https://images.unsplash.com/photo-1504703395950-b89145a5425b?w=800&auto=format&fit=crop&q=80',
         label: 'Corte Texturizado',
     },
     'mullet-moderno': {
-        path: '/multimedia/styles/mullet-moderno.jpg',
+        path: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=800&auto=format&fit=crop&q=80',
         label: 'Mullet Moderno',
     },
     'faux-hawk': {
-        path: '/multimedia/styles/faux-hawk.jpg',
+        path: 'https://images.unsplash.com/photo-1605497788044-5a32c7078486?w=800&auto=format&fit=crop&q=80',
         label: 'Faux Hawk / Mohawk',
     },
     'corte-militar': {
-        path: '/multimedia/styles/corte-militar.jpg',
-        label: 'Corte Militar',
+        path: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=800&auto=format&fit=crop&q=80',
+        label: 'Corte Militar (Buzz Cut)',
     },
     'bob': {
-        path: '/multimedia/styles/bob.jpg',
+        path: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?w=800&auto=format&fit=crop&q=80',
         label: 'Bob Clásico',
     },
     'shaggy': {
-        path: '/multimedia/styles/shaggy.jpg',
+        path: 'https://images.unsplash.com/photo-1560869713-7d0a29430803?w=800&auto=format&fit=crop&q=80',
         label: 'Shaggy con Capas',
     },
     'coloracion': {
-        path: '/multimedia/styles/coloracion.jpg',
+        path: 'https://images.unsplash.com/photo-1519699047748-de8e457a634e?w=800&auto=format&fit=crop&q=80',
         label: 'Coloración Estratégica',
     },
     'diseno-rapado': {
-        path: '/multimedia/styles/diseno-rapado.jpg',
-        label: 'Diseño Rapado',
+        path: 'https://images.unsplash.com/photo-1622288432450-277d0fef5ed6?w=800&auto=format&fit=crop&q=80',
+        label: 'Diseño Rapado (Hair Tattoo)',
     },
 };
 
