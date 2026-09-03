@@ -375,7 +375,7 @@ export default function HomePage() {
   );
 
   return (
-    <div className="font-sans min-h-screen w-full overflow-x-hidden bg-background relative">
+    <div className="font-sans min-h-screen w-full overflow-x-hidden bg-background relative" suppressHydrationWarning>
 
       {activeScene === 'home' ? (
         <HeroScene />
