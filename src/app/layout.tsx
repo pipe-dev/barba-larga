@@ -1,16 +1,9 @@
 import type { Metadata } from "next";
-import { Poppins } from "next/font/google";
 import { Toaster } from "@/components/ui/toaster";
 import { BookingProvider } from "@/hooks/booking-provider";
 import { AudioStoreProvider } from "@/hooks/audio-store-provider";
 import { WelcomeModal } from "@/components/welcome-modal";
 import "./globals.css";
-
-const poppins = Poppins({
-  subsets: ["latin"],
-  weight: ["400", "700", "900"],
-  variable: "--font-poppins",
-});
 
 export const metadata: Metadata = {
   title: "Barba Larga AppointMe",
@@ -27,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={`${poppins.variable}`} suppressHydrationWarning>
+    <html lang="es" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

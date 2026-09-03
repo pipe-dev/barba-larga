@@ -20,8 +20,8 @@ const config = {
     },
     extend: {
       fontFamily: {
-        sans: ["var(--font-poppins)", "sans-serif"],
-        headline: ["var(--font-poppins)", "sans-serif"],
+        sans: ["'Poppins'", "var(--font-poppins)", "sans-serif"],
+        headline: ["'Poppins'", "var(--font-poppins)", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",

@@ -378,7 +378,7 @@ function DeleteBlockDialog({ slot, team, onDeleted, onOpenChange }: { slot: Appo
                 <DialogHeader>
                     <DialogTitle>Gestionar Bloqueo de Horario</DialogTitle>
                     <DialogDescription>
-                        Has seleccionado el evento "{slot.name}" de {barber?.name} para el día {format(parseISO(slot.date), "PPP", { locale: es })} de {slot.time} a {slot.endTime}.
+                        Has seleccionado el evento &quot;{slot.name}&quot; de {barber?.name} para el día {format(parseISO(slot.date), "PPP", { locale: es })} de {slot.time} a {slot.endTime}.
                     </DialogDescription>
                 </DialogHeader>
                 <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-end gap-2">
