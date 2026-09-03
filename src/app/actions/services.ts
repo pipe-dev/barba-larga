@@ -4,8 +4,9 @@ import { db } from '@/lib/firebase';
 import { collection, doc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import { Service } from '@/lib/data';
 import { requireAdminSession } from '@/lib/auth';
+import { unstable_cache, revalidateTag } from 'next/cache';
 
-export async function getServicesFromDB(): Promise<Service[]> {
+async function fetchServicesFromFirestore(): Promise<Service[]> {
     try {
         const servicesRef = collection(db, "services");
         const snapshot = await getDocs(servicesRef);
@@ -43,6 +44,12 @@ export async function getServicesFromDB(): Promise<Service[]> {
     }
 }
 
+export const getServicesFromDB = unstable_cache(
+    async () => fetchServicesFromFirestore(),
+    ['services-catalog-cache'],
+    { tags: ['services'], revalidate: 86400 }
+);
+
 export async function createService(data: { name: string; price: string; duration: number; description?: string; mediaUrl?: string }) {
     try {
         await requireAdminSession();
@@ -71,6 +78,7 @@ export async function createService(data: { name: string; price: string; duratio
         };
 
         await setDoc(serviceRef, newService);
+        revalidateTag('services');
         return { success: true, message: `Servicio '${data.name}' creado con éxito.` };
     } catch (error: any) {
         console.error("Error creating service:", error);
@@ -84,6 +92,7 @@ export async function deleteService(id: string) {
         await requireAdminSession();
         if (!id) return { success: false, message: "ID de servicio no válido." };
         await deleteDoc(doc(db, "services", id));
+        revalidateTag('services');
         return { success: true, message: "Servicio eliminado con éxito." };
     } catch (error: any) {
         console.error("Error deleting service:", error);
@@ -102,6 +111,7 @@ export async function updateService(id: string, data: { price?: string, duration
             id,
             updatedAt: new Date(),
         }, { merge: true });
+        revalidateTag('services');
 
         return { success: true, message: "Servicio actualizado correctamente." };
     } catch (error: any) {

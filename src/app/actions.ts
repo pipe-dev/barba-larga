@@ -16,6 +16,7 @@ import path from 'path';
 import { headers } from 'next/headers';
 import { setAuthCookie, clearAuthCookie, requireAdminSession, requireAuthSession, getServerSession } from '@/lib/auth';
 import { logSystemEvent, SystemLog } from '@/lib/telemetry';
+import { unstable_cache, revalidateTag } from 'next/cache';
 
 export type { SystemLog } from '@/lib/telemetry';
 
@@ -1820,6 +1821,7 @@ export async function addTeamMember(prevState: any, formData: FormData) {
             color: randomColor,
             order: maxOrder + 1
         });
+        revalidateTag('team');
         return { success: true, message: `Colaborador '${name}' añadido con éxito.` };
     } catch (error) {
         console.error("Error adding team member:", error);
@@ -1838,7 +1840,7 @@ const teamMemberSchema = z.object({
     whatsapp: z.string().optional().or(z.literal("")),
 });
 
-export async function getTeam(): Promise<TeamMember[]> {
+async function fetchTeamFromFirestore(): Promise<TeamMember[]> {
     try {
         const teamCol = collection(db, "team");
         const querySnapshot = await getDocs(query(teamCol));
@@ -1865,6 +1867,12 @@ export async function getTeam(): Promise<TeamMember[]> {
         return [];
     }
 }
+
+export const getTeam = unstable_cache(
+    async () => fetchTeamFromFirestore(),
+    ['team-list-cache'],
+    { tags: ['team'], revalidate: 86400 }
+);
 
 
 export async function updateTeamMember(prevState: any, formData: FormData) {
@@ -1912,6 +1920,7 @@ export async function updateTeamMember(prevState: any, formData: FormData) {
             role: memberData.role,
             whatsapp: memberData.whatsapp || "",
         });
+        revalidateTag('team');
         return { success: true, message: "Colaborador actualizado con éxito." };
     } catch (error) {
         console.error("Error updating team member:", error);
@@ -1932,6 +1941,7 @@ export async function toggleTeamMemberAvailability(id: string, isAvailable: bool
     try {
         const memberRef = doc(db, "team", id);
         await updateDoc(memberRef, { isAvailable });
+        revalidateTag('team');
         return { success: true, message: `Disponibilidad actualizada.` };
     } catch (error) {
         console.error("Error updating availability:", error);
@@ -1953,6 +1963,7 @@ export async function updateTeamOrder(orders: { id: string, order: number }[]) {
             batch.update(memberRef, { order: item.order });
         });
         await batch.commit();
+        revalidateTag('team');
         return { success: true, message: "Orden actualizado exitosamente." };
     } catch (error) {
         console.error("Error updating team order:", error);
@@ -1976,6 +1987,7 @@ export async function deleteTeamMember(memberId: string): Promise<{ success: boo
     }
     try {
         await deleteDoc(doc(db, "team", memberId));
+        revalidateTag('team');
         return { success: true, message: "Colaborador eliminado con éxito." };
     } catch (error) {
         console.error("Error deleting team member:", error);
@@ -1993,7 +2005,7 @@ export type Notification = {
     createdAt: Date;
 };
 
-export async function getNotifications(): Promise<Omit<Notification, 'createdAt'>[]> {
+async function fetchNotificationsFromFirestore(): Promise<Omit<Notification, 'createdAt'>[]> {
     try {
         const notificationsCol = collection(db, "notifications");
         const q = query(notificationsCol, orderBy("createdAt", "desc"));
@@ -2010,6 +2022,12 @@ export async function getNotifications(): Promise<Omit<Notification, 'createdAt'
         return [];
     }
 }
+
+export const getNotifications = unstable_cache(
+    async () => fetchNotificationsFromFirestore(),
+    ['notifications-cache'],
+    { tags: ['notifications'], revalidate: 86400 }
+);
 
 export async function addNotification(prevState: any, formData: FormData) {
     const validatedFields = notificationSchema.safeParse({
@@ -2032,6 +2050,7 @@ export async function addNotification(prevState: any, formData: FormData) {
             description,
             createdAt: new Date(),
         });
+        revalidateTag('notifications');
         return { success: true, message: "Notificación añadida con éxito." };
     } catch (error) {
         console.error("Error adding notification:", error);
@@ -2065,6 +2084,7 @@ export async function updateNotification(prevState: any, formData: FormData) {
             title: notificationData.title,
             description: notificationData.description,
         });
+        revalidateTag('notifications');
         return { success: true, message: "Notificación actualizada con éxito." };
     } catch (error) {
         console.error("Error updating notification:", error);
@@ -2078,6 +2098,7 @@ export async function deleteNotification(notificationId: string): Promise<{ succ
     }
     try {
         await deleteDoc(doc(db, "notifications", notificationId));
+        revalidateTag('notifications');
         return { success: true, message: "Notificación eliminada con éxito." };
     } catch (error) {
         console.error("Error deleting notification:", error);
