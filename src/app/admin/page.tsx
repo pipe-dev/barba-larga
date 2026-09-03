@@ -202,7 +202,7 @@ function BlockTimeDialog({ team, onDataChange, onOpenChange, initialData }: { te
     const [name, setName] = React.useState("Descanso");
     const [recurrence, setRecurrence] = React.useState("none");
 
-    const watchDate = date || new Date();
+    const watchDate = React.useMemo(() => date || new Date(), [date]);
 
     const timeOptions = React.useMemo(() => {
         const allDayTimes: string[] = [];
