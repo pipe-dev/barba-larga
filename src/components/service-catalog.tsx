@@ -24,13 +24,13 @@ type Scene = 'home' | 'about' | 'team' | 'services' | 'booking' | 'ai-advisor' |
 
 // --- MAPA DE IMÁGENES OFICIALES PARA LOS 7 SERVICIOS ---
 const officialServiceImages: Record<string, string> = {
-  "haircut": "/multimedia/corte-autoridad.jpg",
-  "haircut-eyebrows": "/multimedia/haircut-eyebrows.png",
-  "haircut-beard": "/multimedia/experiencia-dominante.jpg",
-  "haircut-design": "/multimedia/corte-diseño-cejas.jpg",
-  "haircut-facial-mask": "/multimedia/rostro-impecable.jpg",
-  "beard-combo": "/multimedia/barba.jpg",
-  "eyebrows": "/multimedia/haircut-eyebrows.png",
+  "haircut": "https://i.ibb.co/Ps2YzTHZ/corte-autoridad.webp",
+  "haircut-eyebrows": "https://i.ibb.co/1YCyX60S/haircut-eyebrows.png",
+  "haircut-beard": "https://i.ibb.co/j9zYsTHH/experiencia-dominante.jpg",
+  "haircut-design": "https://i.ibb.co/PGKgQDLH/corte-dise-o-cejas.jpg",
+  "haircut-facial-mask": "https://i.ibb.co/TD9mLsWr/rostro-impecable.png",
+  "beard-combo": "https://i.ibb.co/21fHYQfG/barba.png",
+  "eyebrows": "https://i.ibb.co/1YCyX60S/haircut-eyebrows.png",
 };
 
 // --- MAPA DE ICONOS ---
@@ -58,7 +58,7 @@ const ServiceCard = ({
   const perspectiveWrapperRef = React.useRef<HTMLDivElement>(null);
 
   // Imagen del servicio con fallback a la ruta oficial
-  const imageSrc = service.mediaUrl || officialServiceImages[service.id] || "/multimedia/corte-autoridad.jpg";
+  const imageSrc = service.mediaUrl || officialServiceImages[service.id] || "https://i.ibb.co/Ps2YzTHZ/corte-autoridad.webp";
   const isVariablePrice = service.name?.toLowerCase().includes('keratina') || service.name?.toLowerCase().includes('coloración');
 
   // Animación 3D Parallax interactiva con GSAP
@@ -126,7 +126,7 @@ const ServiceCard = ({
                 priority={isFeatured}
                 onError={(e) => {
                   const target = e.target as HTMLImageElement;
-                  target.src = officialServiceImages[service.id] || "/multimedia/corte-autoridad.jpg";
+                  target.src = officialServiceImages[service.id] || "https://i.ibb.co/Ps2YzTHZ/corte-autoridad.webp";
                 }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent" />

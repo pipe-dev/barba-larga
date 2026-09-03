@@ -12,7 +12,7 @@ export function isValidImageUrl(url: string): boolean {
   }
 }
 
-export function getSafeImageUrl(url: string | null | undefined, fallback: string = '/multimedia/logo-barber.jpg'): string {
+export function getSafeImageUrl(url: string | null | undefined, fallback: string = 'https://i.ibb.co/k2TL19sp/logo-barber.jpg'): string {
   if (!url || !isValidImageUrl(url)) {
     return fallback;
   }

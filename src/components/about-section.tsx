@@ -20,7 +20,7 @@ export function AboutSection() {
                         <CardContent className="p-0">
                            <div className="relative aspect-square">
                                 <Image
-                                src="/multimedia/sobre-nosotros.jpg"
+                                src="https://i.ibb.co/qFnrJHvb/sobre-nosotros.jpg"
                                 alt="Un barbero recortando cuidadosamente la barba de un cliente"
                                 width={600}
                                 height={600}
