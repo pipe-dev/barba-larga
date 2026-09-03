@@ -17,6 +17,7 @@ import { headers } from 'next/headers';
 import { setAuthCookie, clearAuthCookie, requireAdminSession, requireAuthSession, getServerSession } from '@/lib/auth';
 import { logSystemEvent, SystemLog } from '@/lib/telemetry';
 import { unstable_cache, revalidateTag } from 'next/cache';
+import { acquireLock, releaseLock } from '@/lib/redis';
 
 export type { SystemLog } from '@/lib/telemetry';
 
@@ -294,6 +295,16 @@ export async function bookAppointment(prevState: any, formData: FormData) {
     const name = sanitizeInput(rawName);
     const clientEmail = sanitizeInput(rawClientEmail);
     const phone = sanitizeInput(rawPhone);
+
+    // Distributed concurrency lock for the requested slot
+    const slotLockKey = `lock:slot:${barberId}:${date}:${time}`;
+    const lockResult = await acquireLock(slotLockKey, 120);
+    if (!lockResult.success) {
+        return {
+            success: false,
+            message: "Este horario acaba de ser seleccionado por otro cliente en este instante. Por favor, selecciona otro turno.",
+        };
+    }
 
     const newAppointmentRef = doc(collection(db, "appointments"));
     try {
@@ -664,6 +675,10 @@ Total: $${totalPrice.toLocaleString('es-CO')}`;
             success: false,
             message: `Ocurrió un error al procesar la solicitud. ${errorMessage}`
         };
+    } finally {
+        if (lockResult?.token) {
+            await releaseLock(slotLockKey, lockResult.token);
+        }
     }
 }
 
