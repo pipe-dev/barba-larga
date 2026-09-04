@@ -98,19 +98,26 @@ export async function generateExpertRuleBasedAdvice(input: AIStyleAdvisorInput):
   }
 
   // --- ANÁLISIS DE INTENCIÓN MASCULINA PARA BARBERÍA ---
-  const hasBeard = prefs.includes('barba') || prefs.includes('bigote') || prefs.includes('afeitad') || prefs.includes('candado') || prefs.includes('perfilado de barba');
-  const hasEyebrows = prefs.includes('ceja') || prefs.includes('cejas');
-  const hasFacial = prefs.includes('mascarilla') || prefs.includes('facial') || prefs.includes('exfolia') || prefs.includes('puntos negros') || prefs.includes('piel') || prefs.includes('grasa');
-  const hasDesign = prefs.includes('diseno') || prefs.includes('linea') || prefs.includes('rayas') || prefs.includes('grecas') || prefs.includes('dibujo') || prefs.includes('tattoo');
-  const hasClassic = prefs.includes('clasico') || prefs.includes('formal') || prefs.includes('oficina') || prefs.includes('raya') || prefs.includes('elegante') || prefs.includes('pompadour') || prefs.includes('ejecutivo') || prefs.includes('slick') || prefs.includes('caballero');
-  const hasMilitary = prefs.includes('militar') || prefs.includes('rapado') || prefs.includes('buzz') || prefs.includes('corto') || prefs.includes('bajito') || prefs.includes('deporte') || prefs.includes('gym') || prefs.includes('calvo');
-  const hasCrop = prefs.includes('crop') || prefs.includes('french') || prefs.includes('flequillo') || prefs.includes('cerquillo') || prefs.includes('cesar');
-  const hasMullet = prefs.includes('mullet') || prefs.includes('largo atras') || prefs.includes('volumen atras') || prefs.includes('ochentero');
-  const hasFauxHawk = prefs.includes('faux') || prefs.includes('hawk') || prefs.includes('cresta') || prefs.includes('puntas') || prefs.includes('puntiagudo') || prefs.includes('mohawk');
-  const hasWavy = prefs.includes('ondulado') || prefs.includes('rizado') || prefs.includes('crespo') || prefs.includes('ondas') || prefs.includes('rulos') || prefs.includes('volumen natural');
-  const hasColor = prefs.includes('color') || prefs.includes('platino') || prefs.includes('mechas') || prefs.includes('tinte') || prefs.includes('decolor') || prefs.includes('cenizo') || prefs.includes('blanco');
+  const hasMilitary = /(rap|militar|buzz|pelon|pelado|calvo|al cero|sin pelo|quitar.*pelo|sin peinar|bien corto|muy corto)/.test(prefs);
+  const hasDesign = /(disen|linea|raya|dibuj|tattoo|greca|figura|grabado)/.test(prefs);
+  const hasClassic = /(clasic|formal|oficin|raya|elegant|pompadour|ejecutiv|caballer|slick|peinado.*lado|peinado.*atras|tradicional)/.test(prefs);
+  const hasCrop = /(crop|french|flequill|cerquill|cesar|caesar)/.test(prefs);
+  const hasMullet = /(mullet|ochenter|largo.*atras|volumen.*atras|cresta.*atras)/.test(prefs);
+  const hasFauxHawk = /(faux|hawk|crest|mohawk|puntiagud|puntas)/.test(prefs);
+  const hasWavy = /(ondulad|rizad|cresp|chin|rulo|onda|afro)/.test(prefs);
+  const hasColor = /(platin|tint|color|mecha|decolor|ceniz|blanc|rubi|rayit)/.test(prefs);
+  const hasBeard = /(barb|bigot|candado|chivera|afeitad)/.test(prefs);
+  const hasEyebrows = /(cej)/.test(prefs);
+  const hasFacial = /(mascarill|facial|exfolia|punt.*negr|limpiez|cutis|piel|gras)/.test(prefs);
+  const hasFade = /(fade|degradad|desvanecid|taper|sombr)/.test(prefs);
+  const hasShort = /(corto|bajito|fresco|rebaj)/.test(prefs);
 
-  if (hasDesign) {
+  if (hasMilitary) {
+    styleImageKey = 'corte-militar';
+    suggestedServices = 'Corte de cabello';
+    suggestedServiceIds = ['haircut'];
+    recommendations = '¡Máxima frescura, comodidad y disciplina! El corte militar o rapado a piel (buzz cut) es la mejor elección para un look limpio, fresco y varonil que acentúa la mandíbula y no requiere peinado diario. Tip de barbero: Aplica protector solar o tónico hidratante para cuidar el cuero cabelludo tras el corte. Pregunta a tu asesor humano qué otros productos y servicios tienen para ti en el momento que estés en tu cita.';
+  } else if (hasDesign) {
     styleImageKey = 'diseno-rapado';
     suggestedServices = 'Corte de cabello con diseño';
     suggestedServiceIds = ['haircut-design'];
@@ -120,13 +127,6 @@ export async function generateExpertRuleBasedAdvice(input: AIStyleAdvisorInput):
     suggestedServices = 'Corte de cabello';
     suggestedServiceIds = ['haircut'];
     recommendations = '¡Elegancia, presencia y porte profesional! Para un estilo ejecutivo o formal te recomendamos un corte clásico caballero con raya marcada y laterales en degradado cónico suave. Tip de barbero: Péinalo hacia atrás o de lado con pomada base agua de acabado natural. Pregunta a tu asesor humano qué otros productos y servicios tienen para ti en el momento que estés en tu cita.';
-  } else if (hasMilitary) {
-    styleKeyMilitary: {
-      styleImageKey = 'corte-militar';
-      suggestedServices = 'Corte de cabello';
-      suggestedServiceIds = ['haircut'];
-      recommendations = '¡Máxima frescura, comodidad y disciplina! El corte militar (buzz cut) con degradado a piel (skin fade) acentúa la mandíbula y te ahorra tiempo diario de peinado, ideal para deportistas. Tip de barbero: Aplica protector solar o tónico hidratante para cuidar el cuero cabelludo. Pregunta a tu asesor humano qué otros productos y servicios tienen para ti en el momento que estés en tu cita.';
-    }
   } else if (hasMullet) {
     styleImageKey = 'mullet-moderno';
     suggestedServices = 'Corte de cabello';
