@@ -291,7 +291,7 @@ ${JSON.stringify(errorReport, null, 2)}
             </CardTitle>
             <div className="flex items-center justify-center gap-2 mt-1 mb-2">
               <Badge className="bg-primary text-black font-semibold text-xs px-2.5 py-0.5">
-                Versión 2.0 (Frontend)
+                Versión 2.0
               </Badge>
               <Badge variant="outline" className="font-mono text-[11px] border-primary/30 text-primary">
                 Commit: {getAppCommit()}
@@ -377,7 +377,7 @@ ${JSON.stringify(errorReport, null, 2)}
               PIN Maestro Activo
             </Badge>
             <Badge className="bg-primary text-black font-bold text-xs px-2.5 py-0.5 shadow-sm">
-              Versión 2.0 (Frontend)
+              Versión 2.0
             </Badge>
             <Badge variant="secondary" className="font-mono text-xs text-muted-foreground border border-white/10">
               Commit: {getAppCommit()}
