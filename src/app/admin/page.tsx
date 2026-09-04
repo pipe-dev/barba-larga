@@ -879,16 +879,12 @@ function AppointmentsDashboard({
     userRole,
     onLogout,
     onDataChange,
-    isSyncing = false,
-    lastSyncedAt = null,
 }: {
     initialAppointments: Appointment[];
     team: TeamMember[];
     userRole: 'admin' | 'barber';
     onLogout: () => void;
     onDataChange: (silent?: boolean) => Promise<void> | void;
-    isSyncing?: boolean;
-    lastSyncedAt?: Date | null;
 }) {
     const { toast } = useToast();
     const [selectedCalendarBarber, setSelectedCalendarBarber] = React.useState<string>('all');
@@ -1109,22 +1105,6 @@ function AppointmentsDashboard({
                                 </div>
 
                                 <div className="flex items-center gap-2">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => onDataChange(true)}
-                                        disabled={isSyncing}
-                                        className="h-9 px-2.5 sm:px-3 gap-1.5 border-dashed border-primary/40 hover:border-primary text-xs"
-                                        title="Actualizar citas y disponibilidad desde la base de datos"
-                                    >
-                                        <RefreshCw className={cn("h-3.5 w-3.5", isSyncing && "animate-spin text-primary")} />
-                                        <span className="hidden sm:inline font-medium">Sincronizar</span>
-                                        {lastSyncedAt && (
-                                            <span className="text-[10px] text-muted-foreground hidden md:inline">
-                                                ({format(lastSyncedAt, 'HH:mm:ss')})
-                                            </span>
-                                        )}
-                                    </Button>
                                     <Dialog open={isAddAppointmentOpen} onOpenChange={setIsAddAppointmentOpen}>
                                         <Dialog open={isBlockTimeOpen} onOpenChange={setIsBlockTimeOpen}>
                                             <Dialog open={isSlotActionOpen} onOpenChange={setIsSlotActionOpen}>
@@ -1554,8 +1534,6 @@ export default function AdminPage() {
             userRole={userRole}
             onLogout={handleLogout}
             onDataChange={loadData}
-            isSyncing={isSyncing}
-            lastSyncedAt={lastSyncedAt}
         />
     );
 }
