@@ -8,14 +8,14 @@
   "theme_color": "#20120b",
   "icons": [
     {
-      "src": "/multimedia/logo-barber.jpg",
+      "src": "https://i.ibb.co/XxNc72wT/Cita-Confirmada.png",
       "sizes": "192x192",
-      "type": "image/jpeg"
+      "type": "image/png"
     },
     {
-      "src": "/multimedia/logo-barber.jpg",
+      "src": "https://i.ibb.co/XxNc72wT/Cita-Confirmada.png",
       "sizes": "512x512",
-      "type": "image/jpeg"
+      "type": "image/png"
     }
   ]
 }

@@ -12,11 +12,11 @@ export const TopNav = ({ activeScene, onNavigate }: { activeScene: Scene, onNavi
         <div className="flex justify-between items-center w-full">
             <button onClick={() => onNavigate('home')} className="glass-card p-1 rounded-full">
                 <Image
-                    src="https://i.ibb.co/k2TL19sp/logo-barber.jpg"
+                    src="https://i.ibb.co/XxNc72wT/Cita-Confirmada.png"
                     alt="Logo Barbería"
                     width={40}
                     height={40}
-                    className="rounded-full"
+                    className="rounded-full object-cover"
                 />
             </button>
 

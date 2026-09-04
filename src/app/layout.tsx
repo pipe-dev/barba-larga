@@ -10,7 +10,8 @@ export const metadata: Metadata = {
   description: "Reserva tu cita en la barbería Barba Larga.",
   manifest: "/manifest.json",
   icons: {
-    icon: "https://i.ibb.co/k2TL19sp/logo-barber.jpg",
+    icon: "https://i.ibb.co/XxNc72wT/Cita-Confirmada.png",
+    apple: "https://i.ibb.co/XxNc72wT/Cita-Confirmada.png",
   },
 };
 
@@ -26,7 +27,8 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        <link rel="icon" href="https://i.ibb.co/XxNc72wT/Cita-Confirmada.png" />
+        <link rel="apple-touch-icon" href="https://i.ibb.co/XxNc72wT/Cita-Confirmada.png" />
         <meta name="theme-color" content="#20120b" />
       </head>
       <body suppressHydrationWarning>
