@@ -11,7 +11,7 @@ export function getAppCommit(): string {
   if (envCommit) {
     return envCommit.substring(0, 7);
   }
-  return 'c3c3603';
+  return '63f37a5';
 }
 
 export interface SystemLog {

@@ -11,6 +11,7 @@ import {
   createTestSystemLog,
   type SystemLog,
 } from '@/app/actions';
+import { APP_VERSION, getAppCommit } from '@/lib/telemetry';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -288,6 +289,14 @@ ${JSON.stringify(errorReport, null, 2)}
             <CardTitle className="text-2xl font-bold tracking-tight">
               Consola de Diagnóstico
             </CardTitle>
+            <div className="flex items-center justify-center gap-2 mt-1 mb-2">
+              <Badge className="bg-primary text-black font-semibold text-xs px-2.5 py-0.5">
+                Versión 2.0 (Frontend)
+              </Badge>
+              <Badge variant="outline" className="font-mono text-[11px] border-primary/30 text-primary">
+                Commit: {getAppCommit()}
+              </Badge>
+            </div>
             <CardDescription>
               Introduce el PIN de seguridad maestro para acceder a los logs y auditoría del sistema.
             </CardDescription>
@@ -367,10 +376,19 @@ ${JSON.stringify(errorReport, null, 2)}
               <Lock className="mr-1 h-3 w-3" />
               PIN Maestro Activo
             </Badge>
+            <Badge className="bg-primary text-black font-bold text-xs px-2.5 py-0.5 shadow-sm">
+              Versión 2.0 (Frontend)
+            </Badge>
+            <Badge variant="secondary" className="font-mono text-xs text-muted-foreground border border-white/10">
+              Commit: {getAppCommit()}
+            </Badge>
           </div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight md:text-3xl">
+          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight md:text-3xl flex-wrap">
             <Terminal className="h-7 w-7 text-primary" />
-            Centro de Telemetría y Logs del Sistema
+            <span>Centro de Telemetría y Logs del Sistema</span>
+            <span className="text-xs font-mono font-semibold text-primary bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-full">
+              v2.0 • {getAppCommit()}
+            </span>
           </h1>
           <p className="text-sm text-muted-foreground">
             Monitor centralizado de errores, fallos de red, envíos de correo y salud de la base de datos.
