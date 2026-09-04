@@ -1,10 +1,8 @@
 // This is a minimal service worker file required for PWA installation.
 // It doesn't perform any caching or offline functionality.
 
+// Version: 2026-09-04-v2-100-opacity-branding
 self.addEventListener('install', (event) => {
-  // Perform install steps
-  console.log('Service Worker: Installing...');
-  // Skip waiting to activate the new service worker immediately.
   self.skipWaiting();
 });
 
