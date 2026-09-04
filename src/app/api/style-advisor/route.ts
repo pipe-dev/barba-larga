@@ -2,43 +2,48 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getServicesFromDB } from '@/app/actions/services';
 import { aiStyleAdvisor } from '@/ai/flows/ai-style-advisor';
+import { normalizeStyleKey } from '@/lib/style-images';
 
 const outputSchema = z.object({
     recommendations: z.string().describe('Recomendación personalizada en texto plano.'),
     suggestedServices: z.string().describe('Nombres de los servicios sugeridos.'),
     suggestedServiceIds: z.array(z.string()).describe('IDs de los servicios sugeridos del catálogo.'),
-    styleImageKey: z.string().describe('Clave de imagen: french-crop|degradado-natural|texturizado|mullet-moderno|faux-hawk|corte-militar|bob|shaggy|coloracion|diseno-rapado'),
+    styleImageKey: z.string().describe('Clave de imagen: capas-largo|buzz-cut-militar|french-crop|mullet-moderno|pompadour-clasico|taper-fade-barba|skin-fade-clasico|faux-hawk|ondulado-taper|diseno-rayas'),
 });
 
-const systemPrompt = `Eres el asesor de estilo IA de Barba Larga (barbería). Responde en español, sin markdown, texto plano.
+const systemPrompt = `Eres el asesor de estilo IA de Barba Larga (barbería colombiana). Responde SIEMPRE en español, texto plano, SIN markdown. Sé breve y directo (máximo 3-4 oraciones).
 
 INSTRUCCIONES:
-1. Empieza con una frase positiva corta
-2. Da una recomendación concisa basada en tendencias 2025 y las preferencias del cliente
-3. Sugiere 1-2 servicios del catálogo (prefiere combos sobre servicios individuales)
-4. Termina con: "pregunta a tu asesor humano qué otros productos y servicios tienen para ti en el momento que estés en tu cita"
+1. Empieza con una frase positiva corta personalizada.
+2. Da una recomendación concisa de barbero basada en tendencias 2025/2026 y las preferencias del cliente.
+3. Sugiere 1-2 servicios del catálogo (prefiere combos cuando aplique).
+4. Termina con: "pregunta a tu asesor humano qué otros productos y servicios tienen para ti en el momento que estés en tu cita".
 
-REGLAS de servicios:
-- Si recomiendas corte + barba → sugiere "Corte de cabello con Barba" (ID: haircut-beard) o "Barba combo" (ID: beard-combo)
-- Si recomiendas cejas → sugiere "Corte de cabello con ceja" (ID: haircut-eyebrows) o "Cejas con cuchilla" (ID: eyebrows)
-- Si recomiendas diseño → sugiere "Corte de cabello con diseño" (ID: haircut-design)
-- Si recomiendas mascarilla / exfoliación → sugiere "Corte de cabello más mascarilla de exfoliación" (ID: haircut-facial-mask)
-- Si recomiendas corte estándar → sugiere "Corte de cabello" (ID: haircut)
+10 ESTILOS MASCULINOS EN TENDENCIA (styleImageKey):
+- capas-largo: Melena media o larga, cabello en capas, man bun, pelo recogido o suelto con caída natural.
+- buzz-cut-militar: Rapado al cero, corte militar, rapado uniforme, sin peinado, fresco y limpio.
+- french-crop: Flequillo recto o despuntado hacia adelante, textura superior, laterales desvanecidos (muy de moda).
+- mullet-moderno: Laterales degradados con largo y volumen texturizado en la nuca / parte trasera.
+- pompadour-clasico: Raya clásica ejecutiva, peinado hacia atrás o al lado, porte formal o clásico caballero.
+- taper-fade-barba: Degradado sutil solo en patillas y cuello que conecta con barba perfilada a navaja.
+- skin-fade-clasico: Degradado a piel al cero, contraste limpio y pulido en los costados.
+- faux-hawk: Cresta moderna o puntas orientadas hacia el centro con degradado en los laterales.
+- ondulado-taper: Textura rizada u ondulada con taper en los laterales para controlar volumen con movimiento natural.
+- diseno-rayas: Diseños geométricos a navaja, líneas, grecas o hair tattoo sobre un degradado.
 
-REGLAS CRÍTICAS DE GÉNERO:
-- Si el cliente es HOMBRE (o selecciona Masculino): recomienda ÚNICAMENTE cortes masculinos de barbería: degradado-natural, french-crop, texturizado, mullet-moderno, faux-hawk, corte-militar o diseno-rapado. JAMÁS elijas estilos femeninos para clientes hombres.
-- Si el cliente es MUJER: puedes sugerir bob, shaggy o coloracion.
+REGLAS DE SERVICIOS:
+- Corte + Barba → "Corte de cabello con Barba" (ID: haircut-beard) o "Barba combo" (ID: beard-combo)
+- Cejas → "Corte de cabello con ceja" (ID: haircut-eyebrows) o "Cejas con cuchilla" (ID: eyebrows)
+- Diseño → "Corte de cabello con diseño" (ID: haircut-design)
+- Mascarilla / Exfoliación → "Corte de cabello más mascarilla de exfoliación" (ID: haircut-facial-mask)
+- Corte estándar → "Corte de cabello" (ID: haircut)
 
-styleImageKey — elige UNO:
-Para Hombre: french-crop | degradado-natural | texturizado | mullet-moderno | faux-hawk | corte-militar | diseno-rapado
-Para Mujer: bob | shaggy | coloracion
-
-Responde ÚNICAMENTE con un JSON válido (sin texto extra) con esta estructura:
+Responde ÚNICAMENTE con un JSON válido (sin markdown ni texto extra):
 {
-  "recommendations": "texto plano con tu recomendación",
+  "recommendations": "texto plano con tu recomendación y tip de barbero",
   "suggestedServices": "nombres de los servicios sugeridos",
   "suggestedServiceIds": ["id1", "id2"],
-  "styleImageKey": "clave-de-imagen"
+  "styleImageKey": "una-de-las-10-claves"
 }`;
 
 
@@ -98,14 +103,14 @@ export async function POST(req: NextRequest) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: 'llama-3.3-70b-versatile',
+                model: process.env.GROQ_MODEL || 'qwen/qwen3.8-27b',
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: userMessage },
                 ],
-                temperature: 0.7,
+                temperature: 0.6,
                 max_tokens: 512,
-                stream: true, // We must parse the stream manually since Groq doesn't stream JSON objects well, but we'll simulate it for the client
+                stream: true,
             }),
         });
 
@@ -164,17 +169,14 @@ export async function POST(req: NextRequest) {
                     // Done streaming, try to parse the final JSON
                     console.log("✅ AI generation completed stream.");
                     try {
-                        // Extract JSON if it was wrapped in markdown blocks
                         const cleanJson = accumulated.replace(/```json/g, '').replace(/```/g, '').trim();
                         const parsed = JSON.parse(cleanJson);
-                        const isFemale = (genderIdentity || '').toLowerCase().includes('femenin') || (genderIdentity || '').toLowerCase().includes('mujer');
-                        if (!isFemale && (parsed.styleImageKey === 'bob' || parsed.styleImageKey === 'shaggy')) {
-                            parsed.styleImageKey = 'degradado-natural';
-                        }
+                        parsed.styleImageKey = normalizeStyleKey(parsed.styleImageKey);
                         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, result: parsed })}\n\n`));
                     } catch (e) {
-                        console.error("❌ Failed to parse final generated JSON:", accumulated);
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, error: 'Respuesta inválida de IA' })}\n\n`));
+                        console.error("❌ Failed to parse final generated JSON, using resilient engine:", accumulated);
+                        const fallbackAdvice = await aiStyleAdvisor({ genderIdentity, stylePreferences });
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, result: fallbackAdvice })}\n\n`));
                     }
 
                 } catch (err) {
