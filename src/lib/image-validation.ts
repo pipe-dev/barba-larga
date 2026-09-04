@@ -12,7 +12,7 @@ export function isValidImageUrl(url: string): boolean {
   }
 }
 
-export function getSafeImageUrl(url: string | null | undefined, fallback: string = 'https://i.ibb.co/XxNc72wT/Cita-Confirmada.png'): string {
+export function getSafeImageUrl(url: string | null | undefined, fallback: string = 'https://i.ibb.co/qYQksJHS/cita-confirmada-100-opacidad.png'): string {
   if (!url || !isValidImageUrl(url)) {
     return fallback;
   }

@@ -10,13 +10,18 @@ type Scene = 'home' | 'about' | 'team' | 'services' | 'booking' | 'ai-advisor' |
 export const TopNav = ({ activeScene, onNavigate }: { activeScene: Scene, onNavigate: (scene: Scene) => void }) => (
     <header className="absolute top-0 left-0 right-0 p-6 z-10 animate-fade-in-down">
         <div className="flex justify-between items-center w-full">
-            <button onClick={() => onNavigate('home')} className="glass-card p-1 rounded-full">
+            <button 
+                onClick={() => onNavigate('home')} 
+                className="bg-black border border-white/20 p-1 rounded-full shadow-lg opacity-100 hover:scale-105 transition-transform"
+                title="Inicio"
+            >
                 <Image
-                    src="https://i.ibb.co/XxNc72wT/Cita-Confirmada.png"
+                    src="https://i.ibb.co/qYQksJHS/cita-confirmada-100-opacidad.png"
                     alt="Logo Barbería"
                     width={40}
                     height={40}
-                    className="rounded-full object-cover"
+                    className="rounded-full object-cover opacity-100"
+                    priority
                 />
             </button>
 
