@@ -2226,6 +2226,8 @@ export async function getSystemLogs(): Promise<SystemLog[]> {
                 metadata: data.metadata || {},
                 userAgent: data.userAgent || 'Server',
                 ip: data.ip || '127.0.0.1',
+                version: data.version || 'v2.0',
+                commit: data.commit || 'c3c3603',
                 createdAt: dateObj,
                 resolved: Boolean(data.resolved),
             } as SystemLog;

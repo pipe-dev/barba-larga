@@ -162,6 +162,8 @@ export default function SystemLogsPage() {
     const errorReport = {
       id: log.id,
       timestamp: log.createdAt,
+      version: log.version || 'v2.0',
+      commit: log.commit || 'c3c3603',
       level: log.level,
       source: log.source,
       action: log.action,
@@ -175,6 +177,7 @@ export default function SystemLogsPage() {
 
     const formattedText = `=== REPORTE DE ERROR / LOG DEL SISTEMA ===
 Fecha: ${format(new Date(log.createdAt), 'yyyy-MM-dd HH:mm:ss')} (Bogotá)
+Versión: ${log.version || 'v2.0'} (Commit: ${log.commit || 'c3c3603'})
 Nivel: [${log.level.toUpperCase()}]
 Fuente: ${log.source}
 Acción: ${log.action}
@@ -542,6 +545,7 @@ ${JSON.stringify(errorReport, null, 2)}
                   <TableRow>
                     <TableHead className="w-[120px]">Nivel</TableHead>
                     <TableHead className="w-[120px]">Fuente</TableHead>
+                    <TableHead className="w-[120px]">Versión</TableHead>
                     <TableHead className="w-[180px]">Acción</TableHead>
                     <TableHead>Mensaje</TableHead>
                     <TableHead className="w-[150px]">Fecha (Bogotá)</TableHead>
@@ -595,6 +599,14 @@ ${JSON.stringify(errorReport, null, 2)}
                             {log.source === 'frontend' && <Globe className="mr-1 h-3 w-3" />}
                             {log.source === 'database' && <Database className="mr-1 h-3 w-3" />}
                             {log.source}
+                          </Badge>
+                        </TableCell>
+
+                        {/* Version Badge */}
+                        <TableCell>
+                          <Badge variant="outline" className="font-mono text-[11px] bg-primary/5 text-primary border-primary/20">
+                            {log.version || 'v2.0'}
+                            <span className="text-[9px] text-muted-foreground ml-1">({log.commit?.substring(0, 7) || 'c3c3603'})</span>
                           </Badge>
                         </TableCell>
 
@@ -700,11 +712,14 @@ ${JSON.stringify(errorReport, null, 2)}
           {selectedLog && (
             <>
               <DialogHeader>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant={selectedLog.level === 'critical' ? 'destructive' : 'secondary'}>
                     {selectedLog.level.toUpperCase()}
                   </Badge>
                   <Badge variant="outline">{selectedLog.source}</Badge>
+                  <Badge className="bg-primary/20 text-primary font-mono text-xs border border-primary/30">
+                    {selectedLog.version || 'v2.0'} ({selectedLog.commit || 'c3c3603'})
+                  </Badge>
                   <span className="font-mono text-xs text-muted-foreground">ID: {selectedLog.id}</span>
                 </div>
                 <DialogTitle className="text-xl font-bold mt-2">

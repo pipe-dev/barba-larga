@@ -1,8 +1,18 @@
-﻿import { db } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 
 export type LogLevel = 'critical' | 'error' | 'warning' | 'info';
 export type LogSource = 'backend' | 'frontend' | 'database' | 'email' | 'auth';
+
+export const APP_VERSION = 'v2.0';
+
+export function getAppCommit(): string {
+  const envCommit = process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA;
+  if (envCommit) {
+    return envCommit.substring(0, 7);
+  }
+  return 'c3c3603';
+}
 
 export interface SystemLog {
   id: string;
@@ -14,6 +24,8 @@ export interface SystemLog {
   metadata?: Record<string, any>;
   userAgent?: string;
   ip?: string;
+  version?: string;
+  commit?: string;
   createdAt: Date;
   resolved: boolean;
 }
@@ -27,6 +39,8 @@ export async function logSystemEvent(params: {
   metadata?: Record<string, any>;
   userAgent?: string;
   ip?: string;
+  version?: string;
+  commit?: string;
 }): Promise<string | null> {
   try {
     let stackTrace: string | undefined = undefined;
@@ -52,6 +66,8 @@ export async function logSystemEvent(params: {
       metadata: params.metadata || {},
       userAgent: params.userAgent || 'Server',
       ip: params.ip || '127.0.0.1',
+      version: params.version || APP_VERSION,
+      commit: params.commit || getAppCommit(),
       createdAt: Timestamp.now(),
       resolved: false,
     };
