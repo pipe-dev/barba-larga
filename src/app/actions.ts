@@ -16,7 +16,7 @@ import path from 'path';
 import { headers } from 'next/headers';
 import { setAuthCookie, clearAuthCookie, requireAdminSession, requireAuthSession, getServerSession } from '@/lib/auth';
 import { logSystemEvent, SystemLog } from '@/lib/telemetry';
-import { unstable_cache, revalidateTag } from 'next/cache';
+import { unstable_cache, revalidateTag, revalidatePath } from 'next/cache';
 import { acquireLock, releaseLock } from '@/lib/redis';
 
 export type { SystemLog } from '@/lib/telemetry';
@@ -195,6 +195,11 @@ export async function blockTimeSlot(prevState: any, formData: FormData) {
 
         await batch.commit();
 
+        try {
+            revalidatePath('/admin');
+            revalidatePath('/');
+        } catch {}
+
         return {
             success: true,
             message: `Horario bloqueado con éxito para ${barber.name}.`
@@ -259,11 +264,17 @@ function sanitizeInput(str: any): string {
 }
 
 export async function bookAppointment(prevState: any, formData: FormData) {
-    const headersList = await headers();
+    let ip = '127.0.0.1';
+    try {
+        const headersList = await headers();
+        const rawIp = headersList.get('x-forwarded-for')?.split(',')[0] || headersList.get('x-real-ip') || '127.0.0.1';
+        ip = rawIp.trim();
+    } catch {
+        // Safe fallback when called outside request scope (e.g. tests or worker)
+        ip = '127.0.0.1';
+    }
 
     // Rate Limiting Check
-    const rawIp = headersList.get('x-forwarded-for')?.split(',')[0] || headersList.get('x-real-ip') || '127.0.0.1';
-    const ip = rawIp.trim();
     if (!checkRateLimit(ip)) {
         return {
             success: false,
@@ -648,6 +659,11 @@ Total: $${totalPrice.toLocaleString('es-CO')}`;
 
         const successMessage = `¡Reserva confirmada! Tu cita para el ${date} a las ${time} ha sido agendada.`;
 
+        try {
+            revalidatePath('/admin');
+            revalidatePath('/');
+        } catch {}
+
         return {
             success: true,
             message: successMessage,
@@ -701,6 +717,11 @@ export async function deleteAppointment(appointmentId: string): Promise<{ succes
             transaction.delete(appointmentRef);
         });
 
+        try {
+            revalidatePath('/admin');
+            revalidatePath('/');
+        } catch {}
+
         return { success: true, message: "Cita y venta asociada eliminadas con éxito." };
 
     } catch (error) {
@@ -715,6 +736,10 @@ export async function deleteBlockedSlot(slotId: string): Promise<{ success: bool
     }
     try {
         await deleteDoc(doc(db, "appointments", slotId));
+        try {
+            revalidatePath('/admin');
+            revalidatePath('/');
+        } catch {}
         return { success: true, message: "Bloqueo de tiempo eliminado con éxito." };
     } catch (error) {
         console.error("Error deleting blocked slot:", error);
@@ -744,6 +769,11 @@ export async function deleteAllBlockedSlots(barberId: string): Promise<{ success
         });
 
         await batch.commit();
+
+        try {
+            revalidatePath('/admin');
+            revalidatePath('/');
+        } catch {}
 
         return { success: true, message: `${querySnapshot.size} horario(s) bloqueado(s) para este barbero ha(n) sido eliminado(s) con éxito.` };
 
@@ -778,6 +808,11 @@ export async function reactivateAppointment(appointmentId: string): Promise<{ su
             // Update the appointment status
             transaction.update(appointmentRef, { status: 'pending' });
         });
+
+        try {
+            revalidatePath('/admin');
+            revalidatePath('/');
+        } catch {}
 
         return { success: true, message: "Cita reactivada. La venta asociada ha sido eliminada." };
 
@@ -1010,6 +1045,11 @@ export async function confirmAppointmentAsSale(appointmentId: string, paymentMet
             // 2. Update the appointment status
             transaction.update(appointmentRef, { status: 'completed' });
         });
+
+        try {
+            revalidatePath('/admin');
+            revalidatePath('/');
+        } catch {}
 
         return { success: true, message: "Venta confirmada y registrada con éxito." };
 
@@ -1883,11 +1923,19 @@ async function fetchTeamFromFirestore(): Promise<TeamMember[]> {
     }
 }
 
-export const getTeam = unstable_cache(
+const cachedTeam = unstable_cache(
     async () => fetchTeamFromFirestore(),
     ['team-list-cache'],
     { tags: ['team'], revalidate: 86400 }
 );
+
+export async function getTeam(): Promise<TeamMember[]> {
+    try {
+        return await cachedTeam();
+    } catch {
+        return await fetchTeamFromFirestore();
+    }
+}
 
 
 export async function updateTeamMember(prevState: any, formData: FormData) {
@@ -2038,11 +2086,19 @@ async function fetchNotificationsFromFirestore(): Promise<Omit<Notification, 'cr
     }
 }
 
-export const getNotifications = unstable_cache(
+const cachedNotifications = unstable_cache(
     async () => fetchNotificationsFromFirestore(),
     ['notifications-cache'],
     { tags: ['notifications'], revalidate: 86400 }
 );
+
+export async function getNotifications(): Promise<Omit<Notification, 'createdAt'>[]> {
+    try {
+        return await cachedNotifications();
+    } catch {
+        return await fetchNotificationsFromFirestore();
+    }
+}
 
 export async function addNotification(prevState: any, formData: FormData) {
     const validatedFields = notificationSchema.safeParse({

@@ -879,12 +879,16 @@ function AppointmentsDashboard({
     userRole,
     onLogout,
     onDataChange,
+    isSyncing = false,
+    lastSyncedAt = null,
 }: {
     initialAppointments: Appointment[];
     team: TeamMember[];
     userRole: 'admin' | 'barber';
     onLogout: () => void;
-    onDataChange: () => void;
+    onDataChange: (silent?: boolean) => Promise<void> | void;
+    isSyncing?: boolean;
+    lastSyncedAt?: Date | null;
 }) {
     const { toast } = useToast();
     const [selectedCalendarBarber, setSelectedCalendarBarber] = React.useState<string>('all');
@@ -1105,6 +1109,22 @@ function AppointmentsDashboard({
                                 </div>
 
                                 <div className="flex items-center gap-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => onDataChange(true)}
+                                        disabled={isSyncing}
+                                        className="h-9 px-2.5 sm:px-3 gap-1.5 border-dashed border-primary/40 hover:border-primary text-xs"
+                                        title="Actualizar citas y disponibilidad desde la base de datos"
+                                    >
+                                        <RefreshCw className={cn("h-3.5 w-3.5", isSyncing && "animate-spin text-primary")} />
+                                        <span className="hidden sm:inline font-medium">Sincronizar</span>
+                                        {lastSyncedAt && (
+                                            <span className="text-[10px] text-muted-foreground hidden md:inline">
+                                                ({format(lastSyncedAt, 'HH:mm:ss')})
+                                            </span>
+                                        )}
+                                    </Button>
                                     <Dialog open={isAddAppointmentOpen} onOpenChange={setIsAddAppointmentOpen}>
                                         <Dialog open={isBlockTimeOpen} onOpenChange={setIsBlockTimeOpen}>
                                             <Dialog open={isSlotActionOpen} onOpenChange={setIsSlotActionOpen}>
@@ -1355,27 +1375,99 @@ function AppointmentsDashboard({
 }
 
 export default function AdminPage() {
+    const { toast } = useToast();
     const [isAuthenticated, setIsAuthenticated] = React.useState(false);
     const [userRole, setUserRole] = React.useState<'admin' | 'barber' | null>(null);
     const [appointments, setAppointments] = React.useState<Appointment[]>([]);
     const [team, setTeam] = React.useState<TeamMember[]>([]);
     const [isLoading, setIsLoading] = React.useState(true);
+    const [isSyncing, setIsSyncing] = React.useState(false);
+    const [lastSyncedAt, setLastSyncedAt] = React.useState<Date | null>(null);
+    const appointmentsRef = React.useRef<Appointment[]>([]);
 
-    const loadData = React.useCallback(async () => {
-        setIsLoading(true);
+    appointmentsRef.current = appointments;
+
+    const playNotificationChime = React.useCallback(() => {
         try {
-            const [initialAppointments, initialTeam] = await Promise.all([
+            if (typeof window === 'undefined') return;
+            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
+            const now = ctx.currentTime;
+
+            const osc1 = ctx.createOscillator();
+            const osc2 = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            gain.connect(ctx.destination);
+            gain.gain.setValueAtTime(0.12, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+            osc1.type = 'sine';
+            osc1.frequency.setValueAtTime(659.25, now);
+            osc1.connect(gain);
+            osc1.start(now);
+            osc1.stop(now + 0.25);
+
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(830.61, now + 0.12);
+            osc2.connect(gain);
+            osc2.start(now + 0.12);
+            osc2.stop(now + 0.5);
+        } catch {
+            // Audio policy fallback
+        }
+    }, []);
+
+    const loadData = React.useCallback(async (silent = false) => {
+        if (!silent) {
+            setIsLoading(true);
+        } else {
+            setIsSyncing(true);
+        }
+        try {
+            const [fetchedAppointments, fetchedTeam] = await Promise.all([
                 getAllAppointments(),
                 getTeam()
             ]);
-            setAppointments(initialAppointments);
-            setTeam(initialTeam);
+
+            // If we already have loaded appointments, detect any new pending appointments
+            if (appointmentsRef.current.length > 0) {
+                const prevIds = new Set(appointmentsRef.current.map(a => a.id));
+                const newAppointments = fetchedAppointments.filter(
+                    a => !prevIds.has(a.id) && a.type === 'appointment' && a.status === 'pending'
+                );
+
+                if (newAppointments.length > 0) {
+                    playNotificationChime();
+                    newAppointments.forEach(apt => {
+                        const barberName = fetchedTeam.find(b => b.id === apt.barberId)?.name || 'Barbero';
+                        toast({
+                            title: "🔔 ¡Nueva Cita Recibida!",
+                            description: `${apt.name} - ${apt.time} (${apt.date}) con ${barberName}`,
+                            className: "border-green-500 bg-green-950/90 text-white font-medium shadow-lg",
+                        });
+                    });
+                }
+            }
+
+            setAppointments(fetchedAppointments);
+            setTeam(fetchedTeam);
+            setLastSyncedAt(new Date());
         } catch (error) {
             console.error("Failed to load data:", error);
+            if (silent) {
+                toast({
+                    title: "Error de sincronización",
+                    description: "No se pudieron actualizar los datos de la agenda.",
+                    variant: "destructive",
+                });
+            }
         } finally {
             setIsLoading(false);
+            setIsSyncing(false);
         }
-    }, []);
+    }, [playNotificationChime, toast]);
 
     React.useEffect(() => {
         checkAdminSession().then(session => {
@@ -1384,7 +1476,7 @@ export default function AdminPage() {
                 setUserRole(session.role);
                 sessionStorage.setItem('isAdminAuthenticated', 'true');
                 sessionStorage.setItem('userRole', session.role);
-                loadData();
+                loadData(false);
             } else {
                 sessionStorage.removeItem('isAdminAuthenticated');
                 sessionStorage.removeItem('userRole');
@@ -1397,10 +1489,40 @@ export default function AdminPage() {
         });
     }, [loadData]);
 
+    // Background auto-refresh polling every 25 seconds when tab is active
+    React.useEffect(() => {
+        if (!isAuthenticated) return;
+
+        const intervalId = setInterval(() => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+                loadData(true);
+            }
+        }, 25000);
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                loadData(true);
+            }
+        };
+
+        const handleFocus = () => {
+            loadData(true);
+        };
+
+        window.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('focus', handleFocus);
+
+        return () => {
+            clearInterval(intervalId);
+            window.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('focus', handleFocus);
+        };
+    }, [isAuthenticated, loadData]);
+
     const handleLoginSuccess = (role: 'admin' | 'barber') => {
         setIsAuthenticated(true);
         setUserRole(role);
-        loadData();
+        loadData(false);
     };
 
     const handleLogout = async () => {
@@ -1432,6 +1554,8 @@ export default function AdminPage() {
             userRole={userRole}
             onLogout={handleLogout}
             onDataChange={loadData}
+            isSyncing={isSyncing}
+            lastSyncedAt={lastSyncedAt}
         />
     );
 }

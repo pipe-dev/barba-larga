@@ -44,11 +44,19 @@ async function fetchServicesFromFirestore(): Promise<Service[]> {
     }
 }
 
-export const getServicesFromDB = unstable_cache(
+const cachedServices = unstable_cache(
     async () => fetchServicesFromFirestore(),
     ['services-catalog-cache'],
     { tags: ['services'], revalidate: 86400 }
 );
+
+export async function getServicesFromDB(): Promise<Service[]> {
+    try {
+        return await cachedServices();
+    } catch {
+        return await fetchServicesFromFirestore();
+    }
+}
 
 export async function createService(data: { name: string; price: string; duration: number; description?: string; mediaUrl?: string }) {
     try {
