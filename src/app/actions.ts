@@ -21,14 +21,28 @@ import { acquireLock, releaseLock } from '@/lib/redis';
 
 export type { SystemLog } from '@/lib/telemetry';
 
+const phoneValidationSchema = z.string({ required_error: "El número de teléfono es obligatorio." })
+    .trim()
+    .min(7, { message: "El número de teléfono es muy corto." })
+    .max(25, { message: "El número de teléfono es muy largo." })
+    .regex(/^[+]?[\d\s().-]{7,25}$/, { message: "El formato de teléfono solo puede contener números, espacios y prefijos como +57." })
+    .refine((val) => {
+        const digits = val.replace(/\D/g, '');
+        return digits.length >= 7 && digits.length <= 15;
+    }, {
+        message: "El número de teléfono debe contener entre 7 y 15 dígitos numéricos.",
+    });
+
 const bookingSchema = z.object({
     id: z.string().optional(), // For updates
     barberId: z.string().min(1, { message: "Por favor, selecciona un barbero." }),
     name: z.string()
         .min(2, { message: "El nombre debe tener al menos 2 caracteres." })
         .regex(/^[a-zA-Z\u00C0-\u017F\s'-]+$/, { message: "El nombre solo puede contener letras, espacios y guiones." }),
-    email: z.string().email({ message: "Por favor, introduce un correo electrónico válido." }).optional().or(z.literal("")),
-    phone: z.string().optional(),
+    email: z.string({ required_error: "El correo electrónico es obligatorio." })
+        .trim()
+        .email({ message: "Por favor, introduce un correo electrónico válido." }),
+    phone: phoneValidationSchema,
     service: z.string().min(1, { message: "Por favor, selecciona al menos un servicio." }),
     date: z.string({ required_error: "Por favor, selecciona una fecha." }),
     time: z.string({ required_error: "Por favor, selecciona una hora." }),
