@@ -535,19 +535,31 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
 
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label htmlFor="name">Nombre</Label>
-                      <Input id="name" name="name" placeholder="Tu nombre" required />
+                      <Label htmlFor="name">Nombre <span className="text-destructive">*</span></Label>
+                      <Input id="name" name="name" placeholder="Tu nombre completo" required />
                       {state.errors?.name && <p className="text-sm text-destructive">{state.errors.name[0]}</p>}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="phone">Número de Teléfono</Label>
-                      <Input id="phone" name="phone" type="tel" placeholder="Tu número" />
+                      <Label htmlFor="phone">Número de Teléfono <span className="text-destructive">*</span></Label>
+                      <Input 
+                        id="phone" 
+                        name="phone" 
+                        type="tel" 
+                        placeholder="Ej: +57 300 123 4567 o 3001234567" 
+                        required 
+                      />
                       {state.errors?.phone && <p className="text-sm text-destructive">{state.errors.phone[0]}</p>}
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="email">Correo Electrónico</Label>
-                    <Input id="email" name="email" type="email" placeholder="tu@email.com" required />
+                    <Label htmlFor="email">Correo Electrónico <span className="text-destructive">*</span></Label>
+                    <Input 
+                      id="email" 
+                      name="email" 
+                      type="email" 
+                      placeholder="tu@email.com" 
+                      required 
+                    />
                     {state.errors?.email && <p className="text-sm text-destructive">{state.errors.email[0]}</p>}
                   </div>
 
