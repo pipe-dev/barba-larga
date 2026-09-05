@@ -163,7 +163,7 @@ export default function SystemLogsPage() {
     const errorReport = {
       id: log.id,
       timestamp: log.createdAt,
-      version: log.version || 'v2.0',
+      version: log.version || 'v2.1',
       commit: log.commit || 'c3c3603',
       level: log.level,
       source: log.source,
@@ -178,7 +178,7 @@ export default function SystemLogsPage() {
 
     const formattedText = `=== REPORTE DE ERROR / LOG DEL SISTEMA ===
 Fecha: ${format(new Date(log.createdAt), 'yyyy-MM-dd HH:mm:ss')} (Bogotá)
-Versión: ${log.version || 'v2.0'} (Commit: ${log.commit || 'c3c3603'})
+Versión: ${log.version || 'v2.1'} (Commit: ${log.commit || 'c3c3603'})
 Nivel: [${log.level.toUpperCase()}]
 Fuente: ${log.source}
 Acción: ${log.action}
@@ -291,7 +291,7 @@ ${JSON.stringify(errorReport, null, 2)}
             </CardTitle>
             <div className="flex items-center justify-center gap-2 mt-1 mb-2">
               <Badge className="bg-primary text-black font-semibold text-xs px-2.5 py-0.5">
-                Versión 2.0
+                Versión 2.1
               </Badge>
               <Badge variant="outline" className="font-mono text-[11px] border-primary/30 text-primary">
                 Commit: {getAppCommit()}
@@ -377,7 +377,7 @@ ${JSON.stringify(errorReport, null, 2)}
               PIN Maestro Activo
             </Badge>
             <Badge className="bg-primary text-black font-bold text-xs px-2.5 py-0.5 shadow-sm">
-              Versión 2.0
+              Versión 2.1
             </Badge>
             <Badge variant="secondary" className="font-mono text-xs text-muted-foreground border border-white/10">
               Commit: {getAppCommit()}
@@ -387,7 +387,7 @@ ${JSON.stringify(errorReport, null, 2)}
             <Terminal className="h-7 w-7 text-primary" />
             <span>Centro de Telemetría y Logs del Sistema</span>
             <span className="text-xs font-mono font-semibold text-primary bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-full">
-              v2.0 • {getAppCommit()}
+              v2.1 • {getAppCommit()}
             </span>
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -623,7 +623,7 @@ ${JSON.stringify(errorReport, null, 2)}
                         {/* Version Badge */}
                         <TableCell>
                           <Badge variant="outline" className="font-mono text-[11px] bg-primary/5 text-primary border-primary/20">
-                            {log.version || 'v2.0'}
+                            {log.version || 'v2.1'}
                             <span className="text-[9px] text-muted-foreground ml-1">({log.commit?.substring(0, 7) || 'c3c3603'})</span>
                           </Badge>
                         </TableCell>
@@ -736,7 +736,7 @@ ${JSON.stringify(errorReport, null, 2)}
                   </Badge>
                   <Badge variant="outline">{selectedLog.source}</Badge>
                   <Badge className="bg-primary/20 text-primary font-mono text-xs border border-primary/30">
-                    {selectedLog.version || 'v2.0'} ({selectedLog.commit || 'c3c3603'})
+                    {selectedLog.version || 'v2.1'} ({selectedLog.commit || 'c3c3603'})
                   </Badge>
                   <span className="font-mono text-xs text-muted-foreground">ID: {selectedLog.id}</span>
                 </div>

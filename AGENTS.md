@@ -13,4 +13,4 @@
 - El sistema de telemetría debe ser silencioso y jamás arrojar excepciones que rompan la aplicación.
 
 ## 3. Consola de Diagnóstico
-- La ruta `/admin/system-logs` mantiene la visibilidad de los registros del sistema protegida por PIN y muestra la versión activa (ej. Versión 2.0).
+- La ruta `/admin/system-logs` mantiene la visibilidad de los registros del sistema protegida por PIN y muestra la versión activa (ej. Versión 2.1).
