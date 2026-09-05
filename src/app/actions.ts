@@ -53,8 +53,8 @@ const blockTimeSchema = z.object({
     date: z.string({ required_error: "Por favor, selecciona una fecha." }),
     time: z.string({ required_error: "Por favor, selecciona una hora de inicio." }),
     endTime: z.string({ required_error: "Por favor, selecciona una hora de fin." }),
-    name: z.string().min(3, { message: "La descripción es muy corta." }),
-    recurrence: z.enum(["none", "weekly", "daily"]).default("none"),
+    name: z.string().min(2, { message: "La descripción es muy corta." }),
+    recurrence: z.enum(["none", "weekly", "yearly", "daily"]).default("none"),
 }).refine(data => {
     const start = timeToMinutes(data.time);
     const end = timeToMinutes(data.endTime);
@@ -185,6 +185,14 @@ export async function blockTimeSlot(prevState: any, formData: FormData) {
         if (recurrence === 'none') {
             const newDocRef = doc(collection(db, "appointments"));
             batch.set(newDocRef, getBlockedSlotPayload(startDate));
+        } else if (recurrence === 'yearly') {
+            // Repeat on the same day of the week for 52 consecutive weeks (1 full year)
+            let currentDate = startDate;
+            for (let week = 0; week < 52; week++) {
+                const newDocRef = doc(collection(db, "appointments"));
+                batch.set(newDocRef, getBlockedSlotPayload(currentDate));
+                currentDate = addDays(currentDate, 7);
+            }
         } else {
             const monthEnd = endOfMonth(startDate);
             let currentDate = startDate;
