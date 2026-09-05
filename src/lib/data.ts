@@ -46,6 +46,15 @@ export const getEndTimeOptions = (date: Date): string[] => {
   return allTimes;
 };
 
+export const getAdminBlockTimeOptions = (): { startTimes: string[]; endTimes: string[] } => {
+  const morningTimes = ["08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM"];
+  const afternoonTimes = ["12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"];
+  const nightTimes = ["06:00 PM", "07:00 PM", "08:00 PM"];
+  const startTimes = [...morningTimes, ...afternoonTimes, ...nightTimes];
+  const endTimes = [...startTimes, "09:00 PM"];
+  return { startTimes, endTimes };
+};
+
 export const timeToMinutes = (timeStr: string): number => {
   if (!timeStr) return -1;
   const normalized = timeStr.trim().toUpperCase();
