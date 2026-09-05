@@ -6,7 +6,7 @@ import * as React from 'react';
 import { useActionState } from 'react';
 import { getNotifications, getAllAppointments, verifyAdminPassword, logoutAdmin, checkAdminSession, deleteAppointment, confirmAppointmentAsSale, getTeam, reactivateAppointment, bookAppointment, deleteBlockedSlot, deleteAllBlockedSlots, blockTimeSlot, getAvailableTimesForDate, addNotification, updateNotification, deleteNotification } from '@/app/actions';
 import type { Appointment, TeamMember, Notification as NotificationType } from '@/app/actions';
-import { Service, getBaseAvailableTimes, getEndTimeOptions, getServiceDetails, timeToMinutes, minutesToTimeStr, doIntervalsOverlap, getServiceDuration } from '@/lib/data';
+import { Service, getBaseAvailableTimes, getEndTimeOptions, getAdminBlockTimeOptions, getServiceDetails, timeToMinutes, minutesToTimeStr, doIntervalsOverlap, getServiceDuration } from '@/lib/data';
 import { getServicesFromDB } from '@/app/actions/services';
 import { format, parseISO, parse } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -65,7 +65,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, LogOut, User, Scissors, CheckCircle, MoreVertical, RefreshCw, Lock, Calendar as CalendarIcon, DollarSign, History, ArrowLeft, PlusCircle, Trash2, Download, Pencil, Briefcase, Users2, Bell, Terminal } from 'lucide-react';
+import { Loader2, LogOut, User, Scissors, CheckCircle, MoreVertical, RefreshCw, Lock, Clock, Calendar as CalendarIcon, DollarSign, History, ArrowLeft, PlusCircle, Trash2, Download, Pencil, Briefcase, Users2, Bell, Terminal } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from "@/hooks/use-toast";
 import { cn } from '@/lib/utils';
@@ -202,18 +202,9 @@ function BlockTimeDialog({ team, onDataChange, onOpenChange, initialData }: { te
     const [name, setName] = React.useState("Descanso");
     const [recurrence, setRecurrence] = React.useState("none");
 
-    const watchDate = React.useMemo(() => date || new Date(), [date]);
-
-    const timeOptions = React.useMemo(() => {
-        const allDayTimes: string[] = [];
-        const baseTimes = getBaseAvailableTimes(watchDate);
-        allDayTimes.push(...baseTimes.morning, ...baseTimes.afternoon, ...baseTimes.night);
-        return allDayTimes;
-    }, [watchDate]);
-
-    const endTimeOptions = React.useMemo(() => {
-        return getEndTimeOptions(watchDate);
-    }, [watchDate]);
+    const { startTimes: timeOptions, endTimes: endTimeOptions } = React.useMemo(() => {
+        return getAdminBlockTimeOptions();
+    }, []);
 
     React.useEffect(() => {
         if (state.success) {
@@ -240,10 +231,13 @@ function BlockTimeDialog({ team, onDataChange, onOpenChange, initialData }: { te
             >
                 <input type="hidden" name="date" value={date ? format(date, "yyyy-MM-dd") : ""} />
                 <input type="hidden" name="barberId" value={barberId} />
+                <input type="hidden" name="time" value={time} />
+                <input type="hidden" name="endTime" value={endTime} />
+                <input type="hidden" name="recurrence" value={recurrence} />
 
                 <div className="space-y-2">
                     <Label htmlFor="barberId">Colaborador</Label>
-                    <Select onValueChange={setBarberId} value={barberId} name="barberId">
+                    <Select onValueChange={setBarberId} value={barberId}>
                         <SelectTrigger id="barberId"><SelectValue placeholder="Selecciona un colaborador" /></SelectTrigger>
                         <SelectContent>
                             {team.filter(t => t.isAvailable).map(barber => (
@@ -270,10 +264,24 @@ function BlockTimeDialog({ team, onDataChange, onOpenChange, initialData }: { te
                     {state.errors?.date && <p className="text-sm text-destructive">{state.errors.date[0]}</p>}
                 </div>
 
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full flex items-center justify-center gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/10"
+                    onClick={() => {
+                        setTime("08:00 AM");
+                        setEndTime("09:00 PM");
+                        setName("Descanso");
+                    }}
+                >
+                    <Clock className="h-4 w-4" /> Bloquear todo el día (08:00 AM - 09:00 PM)
+                </Button>
+
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="time">Inicio</Label>
-                        <Select onValueChange={setTime} value={time} name="time">
+                        <Select onValueChange={setTime} value={time}>
                             <SelectTrigger id="time"><SelectValue placeholder="Inicio" /></SelectTrigger>
                             <SelectContent>{timeOptions.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                         </Select>
@@ -281,7 +289,7 @@ function BlockTimeDialog({ team, onDataChange, onOpenChange, initialData }: { te
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="endTime">Fin</Label>
-                        <Select onValueChange={setEndTime} value={endTime} name="endTime">
+                        <Select onValueChange={setEndTime} value={endTime}>
                             <SelectTrigger id="endTime"><SelectValue placeholder="Fin" /></SelectTrigger>
                             <SelectContent>{endTimeOptions.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                         </Select>
@@ -291,11 +299,12 @@ function BlockTimeDialog({ team, onDataChange, onOpenChange, initialData }: { te
 
                 <div className="space-y-2">
                     <Label htmlFor="recurrence">Repetir bloqueo</Label>
-                    <Select onValueChange={setRecurrence} value={recurrence} name="recurrence">
+                    <Select onValueChange={setRecurrence} value={recurrence}>
                         <SelectTrigger id="recurrence"><SelectValue placeholder="No repetir" /></SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="none">No repetir</SelectItem>
-                            <SelectItem value="weekly">Cada semana este mes</SelectItem>
+                            <SelectItem value="none">Solo este día</SelectItem>
+                            <SelectItem value="weekly">Este día todas las semanas del mes</SelectItem>
+                            <SelectItem value="yearly">Este día todas las semanas del año (52 semanas)</SelectItem>
                             <SelectItem value="daily">Todos los días este mes</SelectItem>
                         </SelectContent>
                     </Select>
@@ -303,7 +312,7 @@ function BlockTimeDialog({ team, onDataChange, onOpenChange, initialData }: { te
 
                 <div className="space-y-2">
                     <Label htmlFor="name">Descripción</Label>
-                    <Input id="name" name="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Almuerzo, Cita médica" />
+                    <Input id="name" name="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Almuerzo, Cita médica, Descanso" />
                     {state.errors?.name && <p className="text-sm text-destructive">{state.errors.name[0]}</p>}
                 </div>
 
