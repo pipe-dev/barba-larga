@@ -65,7 +65,6 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
   const [bookedIntervals, setBookedIntervals] = React.useState<{ startMin: number; endMin: number }[]>([]);
   const [gapSlots, setGapSlots] = React.useState<string[]>([]);
   const [isFetchingTimes, setIsFetchingTimes] = React.useState(false);
-  const [validatingTime, setValidatingTime] = React.useState<string | null>(null);
   const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
   const [team, setTeam] = React.useState<TeamMember[]>([]);
   const [services, setServices] = React.useState<Service[]>([]);
@@ -279,58 +278,12 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
     setIsCalendarOpen(false);
   };
 
-  const handleTimeSelect = async (time: string) => {
-    if (!date || !selectedBarberId) return;
+  const handleTimeSelect = (time: string) => {
+    setSelectedTime(time);
     playClickSound();
-    setValidatingTime(time);
-    try {
-      const dateString = format(date, "yyyy-MM-dd");
-      const freshResult = await getAvailableTimesForDate(dateString, selectedBarberId);
-      const freshIntervals = freshResult.intervals || [];
-      const freshBlocked = (freshResult.blocked || []).map(t => t.toUpperCase().replace(/\s/g, ''));
-      setBookedTimes(freshBlocked);
-      setBookedIntervals(freshIntervals);
-      setGapSlots(freshResult.gaps || []);
-
-      const startMinutes = timeToMinutes(time);
-      const effectiveDuration = totalDuration > 0 ? totalDuration : 60;
-      const endMinutes = startMinutes + effectiveDuration;
-
-      // Check Business Hours (8:00 AM = 480 mins, 9:00 PM = 1260 mins)
-      if (startMinutes < 480 || endMinutes > 1260) {
-        toast({
-          title: "Horario no disponible",
-          description: "Este horario excede el horario de atención de la barbería.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Check against fresh intervals from DB
-      const isTaken = freshIntervals.some(interval => 
-        doIntervalsOverlap(startMinutes, endMinutes, interval.startMin, interval.endMin)
-      );
-
-      if (isTaken) {
-        toast({
-          title: "Horario ya reservado",
-          description: "Este horario acaba de ser ocupado por otro cliente. Por favor, elige otro horario disponible.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setSelectedTime(time);
-      setCurrentStep("fill-details");
-      if (bookingCardRef.current) {
-        bookingCardRef.current.scrollIntoView({ behavior: 'smooth' });
-      }
-    } catch (error) {
-      console.error("Error pre-validating time slot:", error);
-      setSelectedTime(time);
-      setCurrentStep("fill-details");
-    } finally {
-      setValidatingTime(null);
+    setCurrentStep("fill-details");
+    if (bookingCardRef.current) {
+      bookingCardRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
@@ -373,14 +326,9 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
               key={time} 
               variant={selectedTime === time ? "default" : "outline"} 
               onClick={() => handleTimeSelect(time)} 
-              disabled={validatingTime !== null}
-              className="transition-all flex items-center justify-center gap-1"
+              className="transition-all flex items-center justify-center"
             >
-              {validatingTime === time ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                time
-              )}
+              {time}
             </Button>
           ))}
         </div>
@@ -432,7 +380,7 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
         ) : (
           <div className="flex items-center justify-center text-center h-24 mt-2 border-2 border-dashed rounded-lg">
             <p className="text-sm text-muted-foreground">
-              {date?.getDay() === 0 ? "Cerrado los Domingos" : `No hay horas disponibles para ${chosenBarber?.name} este día.`}
+              {`No hay horas disponibles para ${chosenBarber?.name || "este barbero"} este día.`}
             </p>
           </div>
         )}

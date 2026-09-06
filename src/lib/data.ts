@@ -18,14 +18,7 @@ export const SLOT_INTERVAL_MINUTES = 10;
 export const MIN_GAP_MINUTES = 20;
 
 export const getBaseAvailableTimes = (date: Date): { morning: string[], afternoon: string[], night: string[] } => {
-  const day = date.getDay(); // Sunday: 0, Monday: 1, ..., Saturday: 6
-
-  // Sunday is closed
-  if (day === 0) {
-    return { morning: [], afternoon: [], night: [] };
-  }
-
-  // Uniform schedule: 8:00 AM - 9:00 PM every day (Mon-Sat)
+  // Uniform schedule: 8:00 AM - 9:00 PM every day (including Sundays)
   // Admin controls availability via time blocking
   const morningTimes = ["08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM"];
   const afternoonTimes = ["12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"];
