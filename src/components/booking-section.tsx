@@ -150,16 +150,22 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
         bookingCardRef.current.scrollIntoView({ behavior: 'smooth' });
       }
 
-      setTimeout(() => {
-        playSuccessSound();
-        setCurrentStep("confirmed");
-        if (date && selectedBarberId) {
-          fetchBookedTimes(date, selectedBarberId);
+      playSuccessSound();
+      setCurrentStep("confirmed");
+      if (date && selectedBarberId) {
+        fetchBookedTimes(date, selectedBarberId);
+      }
+
+      if (state.whatsappUrl) {
+        try {
+          const win = window.open(state.whatsappUrl, "_blank", "noopener,noreferrer");
+          if (!win || win.closed || typeof win.closed === "undefined") {
+            window.location.assign(state.whatsappUrl);
+          }
+        } catch {
+          window.location.assign(state.whatsappUrl);
         }
-        if (state.whatsappUrl) {
-          window.open(state.whatsappUrl, "_blank", "noopener,noreferrer");
-        }
-      }, 500);
+      }
 
     } else if (!state.success && state.message) {
       toast({

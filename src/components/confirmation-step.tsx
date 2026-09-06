@@ -4,6 +4,7 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { LocateFixed } from "lucide-react";
+import { WhatsAppIcon } from "@/components/ui/icons";
 
 interface CheckmarkIconProps extends React.SVGProps<SVGSVGElement> {
     size?: number;
@@ -85,9 +86,19 @@ export function ConfirmationStep({ barberName, serviceName, date, time, whatsapp
             {whatsappUrl && (
                 <Button 
                     variant="outline" 
-                    onClick={() => window.open(whatsappUrl, "_blank", "noopener,noreferrer")}
-                    className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black"
+                    onClick={() => {
+                        try {
+                            const w = window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+                            if (!w || w.closed || typeof w.closed === "undefined") {
+                                window.location.assign(whatsappUrl);
+                            }
+                        } catch {
+                            window.location.assign(whatsappUrl);
+                        }
+                    }}
+                    className="border-green-500 text-green-500 hover:bg-green-500 hover:text-black font-semibold flex items-center gap-2"
                 >
+                    <WhatsAppIcon className="h-4 w-4" />
                     Abrir WhatsApp
                 </Button>
             )}
