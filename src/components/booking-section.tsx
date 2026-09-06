@@ -76,6 +76,7 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
   const { toast } = useToast();
   const formRef = React.useRef<HTMLFormElement>(null);
   const bookingCardRef = React.useRef<HTMLDivElement>(null);
+  const pendingWaTabRef = React.useRef<Window | null>(null);
 
   React.useEffect(() => {
     async function fetchTeam() {
@@ -157,17 +158,34 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
       }
 
       if (state.whatsappUrl) {
-        try {
-          const win = window.open(state.whatsappUrl, "_blank", "noopener,noreferrer");
-          if (!win || win.closed || typeof win.closed === "undefined") {
+        const waTab = pendingWaTabRef.current;
+        if (waTab && !waTab.closed) {
+          try {
+            waTab.location.href = state.whatsappUrl;
+            pendingWaTabRef.current = null;
+          } catch {
             window.location.assign(state.whatsappUrl);
           }
-        } catch {
-          window.location.assign(state.whatsappUrl);
+        } else {
+          try {
+            const win = window.open(state.whatsappUrl, "_blank", "noopener,noreferrer");
+            if (!win || win.closed || typeof win.closed === "undefined") {
+              window.location.assign(state.whatsappUrl);
+            }
+          } catch {
+            window.location.assign(state.whatsappUrl);
+          }
         }
       }
 
     } else if (!state.success && state.message) {
+      if (pendingWaTabRef.current && !pendingWaTabRef.current.closed) {
+        try {
+          pendingWaTabRef.current.close();
+        } catch {}
+        pendingWaTabRef.current = null;
+      }
+
       toast({
         title: "Error en la Reserva",
         description: state.message,
@@ -533,6 +551,21 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
                   ref={formRef} 
                   action={formAction} 
                   className="space-y-6"
+                  onSubmit={(e) => {
+                    if (e.currentTarget.checkValidity()) {
+                      try {
+                        const waTab = window.open("about:blank", "_blank");
+                        if (waTab) {
+                          try {
+                            waTab.document.write("<html><head><title>Barba Larga - Confirmando cita...</title><meta name='viewport' content='width=device-width, initial-scale=1.0'><style>body{background:#0a0a0a;color:#e5e5e5;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}div{text-align:center;padding:24px;max-width:380px;line-height:1.5;}.spinner{width:36px;height:36px;border:3px solid rgba(255,255,255,0.15);border-top-color:#eab308;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px;}@keyframes spin{to{transform:rotate(360deg);}}</style></head><body><div><div class='spinner'></div><h3 style='color:#fff;margin:0 0 8px;font-size:18px;'>Confirmando tu cita...</h3><p style='color:#a3a3a3;font-size:13px;margin:0;'>Estamos asegurando tu turno en Barba Larga. Abriremos WhatsApp en un instante.</p></div></body></html>");
+                          } catch {}
+                          pendingWaTabRef.current = waTab;
+                        }
+                      } catch (err) {
+                        console.warn("Could not pre-open window:", err);
+                      }
+                    }
+                  }}
                 >
                   <input type="hidden" name="barberId" value={selectedBarberId || ""} />
                   <input type="hidden" name="service" value={selectedServices.join(',')} />
