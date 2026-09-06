@@ -4,7 +4,7 @@ import { collection, addDoc, Timestamp } from 'firebase/firestore';
 export type LogLevel = 'critical' | 'error' | 'warning' | 'info';
 export type LogSource = 'backend' | 'frontend' | 'database' | 'email' | 'auth';
 
-export const APP_VERSION = 'v2.1';
+export const APP_VERSION = 'v2.2';
 
 export function getAppCommit(): string {
   const envCommit = process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA;
