@@ -93,7 +93,10 @@ export const MultiSelect = React.forwardRef<HTMLButtonElement, MultiSelectProps>
             type="button"
             ref={ref}
             {...props}
-            onClick={() => setIsPopoverOpen(!isPopoverOpen)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsPopoverOpen((prev) => !prev);
+            }}
             className="flex w-full min-h-10 p-1 rounded-md border border-input bg-transparent hover:bg-transparent"
           >
             <div className="flex justify-between items-center w-full">

@@ -544,6 +544,10 @@ function AddAppointmentDialog({ team, onDataChange, onOpenChange, initialData }:
         return { morning: availableMorning, afternoon: availableAfternoon, night: availableNight };
     }, [date, bookedIntervals, gapSlots, serviceIds, services]);
 
+    const selectedServices = React.useMemo(() => services.filter(s => serviceIds.includes(s.id)), [services, serviceIds]);
+    const totalDuration = React.useMemo(() => getServiceDuration(serviceIds.join(','), services), [serviceIds, services]);
+    const totalPrice = React.useMemo(() => selectedServices.reduce((sum, s) => sum + (parseInt(String(s.price).replace(/\D/g, '') || '0', 10)), 0), [selectedServices]);
+
     const hasAvailableTimes = morning.length > 0 || afternoon.length > 0 || night.length > 0;
 
     const renderTimeSlots = (times: string[], title: string) => (
@@ -635,6 +639,12 @@ function AddAppointmentDialog({ team, onDataChange, onOpenChange, initialData }:
                             value={serviceIds}
                             placeholder="Selecciona los servicios..."
                         />
+                        {selectedServices.length > 0 && (
+                            <div className="flex items-center justify-between text-xs text-primary font-medium mt-1.5 px-2 bg-primary/10 border border-primary/20 rounded py-1">
+                                <span>{selectedServices.length} servicio(s) seleccionado(s)</span>
+                                <span>{totalDuration} min • ${totalPrice.toLocaleString('es-CO')}</span>
+                            </div>
+                        )}
                         {state.errors?.service && <p className="text-sm text-destructive mt-1">{state.errors.service[0]}</p>}
                     </div>
                 </div>
