@@ -87,9 +87,10 @@ export const MultiSelect = React.forwardRef<HTMLButtonElement, MultiSelectProps>
     };
 
     return (
-      <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+      <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen} modal={true}>
         <PopoverTrigger asChild>
           <Button
+            type="button"
             ref={ref}
             {...props}
             onClick={() => setIsPopoverOpen(!isPopoverOpen)}
@@ -127,7 +128,7 @@ export const MultiSelect = React.forwardRef<HTMLButtonElement, MultiSelectProps>
             </div>
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <PopoverContent className="w-[--radix-popover-trigger-width] p-0 z-[100] pointer-events-auto" align="start">
           <Command>
             <CommandInput placeholder="Buscar..." onKeyDown={handleInputKeyDown} />
             <CommandList>

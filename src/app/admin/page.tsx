@@ -197,6 +197,7 @@ function BlockTimeDialog({ team, onDataChange, onOpenChange, initialData }: { te
 
     const [barberId, setBarberId] = React.useState(initialData?.barberId || "");
     const [date, setDate] = React.useState<Date | undefined>(initialData?.start ? new Date(initialData.start) : new Date());
+    const [isBlockDatePickerOpen, setIsBlockDatePickerOpen] = React.useState(false);
     const [time, setTime] = React.useState(initialData?.start ? format(new Date(initialData.start), "hh:mm a") : "");
     const [endTime, setEndTime] = React.useState(initialData?.end ? format(new Date(initialData.end), "hh:mm a") : "");
     const [name, setName] = React.useState("Descanso");
@@ -250,15 +251,31 @@ function BlockTimeDialog({ team, onDataChange, onOpenChange, initialData }: { te
 
                 <div className="space-y-2 flex flex-col">
                     <Label>Fecha</Label>
-                    <Popover>
+                    <Popover open={isBlockDatePickerOpen} onOpenChange={setIsBlockDatePickerOpen} modal={true}>
                         <PopoverTrigger asChild>
-                            <Button variant={"outline"} className={cn("pl-3 text-left font-normal", !date && "text-muted-foreground")}>
+                            <Button
+                                type="button"
+                                variant={"outline"}
+                                onClick={() => setIsBlockDatePickerOpen(prev => !prev)}
+                                className={cn("pl-3 text-left font-normal", !date && "text-muted-foreground")}
+                            >
                                 {date ? format(date, "PPP", { locale: es }) : <span>Elige una fecha</span>}
                                 <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                             </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar mode="single" selected={date} onSelect={setDate} disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))} initialFocus />
+                        <PopoverContent className="w-auto p-0 z-[100] pointer-events-auto" align="start">
+                            <Calendar
+                                mode="single"
+                                selected={date}
+                                onSelect={(newDate) => {
+                                    if (newDate) {
+                                        setDate(newDate);
+                                        setIsBlockDatePickerOpen(false);
+                                    }
+                                }}
+                                disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))}
+                                initialFocus
+                            />
                         </PopoverContent>
                     </Popover>
                     {state.errors?.date && <p className="text-sm text-destructive">{state.errors.date[0]}</p>}
@@ -423,6 +440,7 @@ function AddAppointmentDialog({ team, onDataChange, onOpenChange, initialData }:
     const [barberId, setBarberId] = React.useState(initialData?.barberId || "");
     const [serviceIds, setServiceIds] = React.useState<string[]>([]);
     const [date, setDate] = React.useState<Date | undefined>(initialData?.start ? new Date(initialData.start) : new Date());
+    const [isDatePickerOpen, setIsDatePickerOpen] = React.useState(false);
     const [time, setTime] = React.useState(initialData?.start ? format(new Date(initialData.start), "hh:mm a") : "");
     const [name, setName] = React.useState("");
     const [email, setEmail] = React.useState("");
@@ -571,7 +589,14 @@ function AddAppointmentDialog({ team, onDataChange, onOpenChange, initialData }:
                 <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-2 sm:gap-4">
                     <Label htmlFor="barberId" className="sm:text-right">Barbero</Label>
                     <div className="sm:col-span-3">
-                        <Select onValueChange={setBarberId} value={barberId} name="barberId">
+                        <Select
+                            onValueChange={(val) => {
+                                setBarberId(val);
+                                setTime("");
+                            }}
+                            value={barberId}
+                            name="barberId"
+                        >
                             <SelectTrigger><SelectValue placeholder="Selecciona un barbero" /></SelectTrigger>
                             <SelectContent>
                                 {team.filter(t => t.isAvailable).map(barber => (
@@ -603,7 +628,10 @@ function AddAppointmentDialog({ team, onDataChange, onOpenChange, initialData }:
                     <div className="sm:col-span-3">
                         <MultiSelect
                             options={serviceOptions}
-                            onValueChange={setServiceIds}
+                            onValueChange={(vals) => {
+                                setServiceIds(vals);
+                                setTime("");
+                            }}
                             value={serviceIds}
                             placeholder="Selecciona los servicios..."
                         />
@@ -614,15 +642,32 @@ function AddAppointmentDialog({ team, onDataChange, onOpenChange, initialData }:
                 <div className="grid grid-cols-1 sm:grid-cols-4 items-start gap-2 sm:gap-4">
                     <Label className="sm:text-right pt-2">Fecha y Hora</Label>
                     <div className="sm:col-span-3 space-y-2">
-                        <Popover>
+                        <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen} modal={true}>
                             <PopoverTrigger asChild>
-                                <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}>
+                                <Button
+                                    type="button"
+                                    variant={"outline"}
+                                    onClick={() => setIsDatePickerOpen(prev => !prev)}
+                                    className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
+                                >
                                     <CalendarIcon className="mr-2 h-4 w-4" />
                                     {date ? format(date, "PPP", { locale: es }) : <span>Elige una fecha</span>}
                                 </Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                                <Calendar mode="single" selected={date} onSelect={setDate} disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))} initialFocus />
+                            <PopoverContent className="w-auto p-0 z-[100] pointer-events-auto" align="start">
+                                <Calendar
+                                    mode="single"
+                                    selected={date}
+                                    onSelect={(newDate) => {
+                                        if (newDate) {
+                                            setDate(newDate);
+                                            setTime("");
+                                            setIsDatePickerOpen(false);
+                                        }
+                                    }}
+                                    disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))}
+                                    initialFocus
+                                />
                             </PopoverContent>
                         </Popover>
 

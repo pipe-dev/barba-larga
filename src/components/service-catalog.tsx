@@ -50,9 +50,10 @@ const ServiceCard = ({
   const perspectiveWrapperRef = React.useRef<HTMLDivElement>(null);
 
   // Imagen del servicio con fallback a la ruta oficial local
-  const imageSrc = (!service.mediaUrl || isBrokenImageUrl(service.mediaUrl))
-    ? (officialServiceImages[service.id] || "/multimedia/corte-autoridad.jpg")
-    : service.mediaUrl;
+  const imageSrc = getSafeImageUrl(
+    service.mediaUrl,
+    officialServiceImages[service.id] || "/multimedia/corte-autoridad.jpg"
+  );
   const isVariablePrice = service.name?.toLowerCase().includes('keratina') || service.name?.toLowerCase().includes('coloración');
 
   // Animación 3D Parallax interactiva con GSAP

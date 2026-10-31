@@ -12,7 +12,7 @@ export const TopNav = ({ activeScene, onNavigate }: { activeScene: Scene, onNavi
         <div className="flex justify-between items-center w-full">
             <button onClick={() => onNavigate('home')} className="glass-card p-1 rounded-full">
                 <Image
-                    src="https://i.ibb.co/qYQksJHS/cita-confirmada-100-opacidad.png"
+                    src="/multimedia/cita-confirmada.png"
                     alt="Logo Barbería"
                     width={40}
                     height={40}
