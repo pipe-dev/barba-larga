@@ -63,7 +63,7 @@ const LeftSidebar = ({ onNavigate }: { onNavigate: (scene: Scene) => void }) => 
       <p className="w-40">Popayán, Colombia</p>
       <div className="relative w-[100px] h-[60px] mt-2">
         <Image
-          src="https://i.ibb.co/4gKfqfnt/Ubicaci-n.png"
+          src="/multimedia/ubicacion.png"
           alt="Ubicación"
           width={100}
           height={60}
@@ -185,7 +185,7 @@ const RightSidebar = ({ notifications, isLoading }: { notifications: Notificatio
             <div>
               <div className="glass-card flex items-center justify-center">
                 <Image
-                  src={"https://i.ibb.co/Ps2YzTHZ/corte-autoridad.webp"}
+                  src="/multimedia/corte-autoridad.jpg"
                   alt={"Corte de Autoridad"}
                   width={150}
                   height={150}

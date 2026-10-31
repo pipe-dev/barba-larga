@@ -17,7 +17,7 @@ import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
 import { getTeam, type TeamMember as TeamMemberType } from "@/app/actions";
 import { useScissorsSound } from "@/hooks/use-scissors-sound";
-import { getSafeImageUrl } from "@/lib/image-validation";
+import { getSafeImageUrl, isBrokenImageUrl } from "@/lib/image-validation";
 
 type Scene = 'home' | 'about' | 'team' | 'services' | 'booking' | 'ai-advisor' | 'location' | 'contact';
 
@@ -51,7 +51,7 @@ const TeamMemberCard = ({ member, isSelected, onSelect }: { member: TeamMemberTy
             data-ai-hint={member.imageHint}
             onError={(e) => {
               const target = e.target as HTMLImageElement;
-              target.src = "https://i.ibb.co/k2TL19sp/logo-barber.jpg";
+              target.src = "/multimedia/logo-barber.jpg";
             }}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent" />
@@ -82,7 +82,7 @@ const TeamMemberCard = ({ member, isSelected, onSelect }: { member: TeamMemberTy
               className="object-cover scale-125 blur-lg brightness-50"
               onError={(e) => {
                 const target = e.target as HTMLImageElement;
-                target.src = "https://i.ibb.co/k2TL19sp/logo-barber.jpg";
+                target.src = "/multimedia/logo-barber.jpg";
               }}
             />
             {/* Contenedor con efecto de vidrio */}
@@ -133,12 +133,37 @@ export function TeamSection({ onNavigate }: { onNavigate: (scene: Scene) => void
     const fetchTeam = async () => {
       try {
         const teamData = await getTeam();
-        // Statically add icon and imageHint for design purposes as they are not in DB
-        const extendedTeamData = teamData.map(member => ({
-          ...member,
-          icon: member.role === "Nuestra Filosofía" ? 'Group' : 'User',
-          imageHint: member.role === "Nuestra Filosofía" ? 'company logo' : (member.name.toLowerCase().includes("próximamente") && member.role === 'Estilista' ? 'female placeholder' : 'barber portrait')
-        }));
+        // Statically add icon, imageHint and resolve broken/expired CDN images with local fallbacks
+        const extendedTeamData = teamData.map(member => {
+          let resolvedImageUrl = member.imageUrl;
+          const roleLower = (member.role || '').toLowerCase();
+          const nameLower = (member.name || '').toLowerCase();
+
+          if (roleLower.includes("filosofía") || nameLower.includes("barba larga") || nameLower.includes("filosofía")) {
+            resolvedImageUrl = "/multimedia/sobre-nosotros.jpg";
+          } else if (nameLower.includes("alan")) {
+            if (!resolvedImageUrl || isBrokenImageUrl(resolvedImageUrl)) {
+              resolvedImageUrl = "/multimedia/nuestro-equipo-alan.jpg";
+            }
+          } else if (nameLower.includes("stiven")) {
+            if (!resolvedImageUrl || isBrokenImageUrl(resolvedImageUrl)) {
+              resolvedImageUrl = "/multimedia/nuestro-equipo-stiven.png";
+            }
+          } else if (nameLower.includes("samudio") || member.id === "jose-samudio") {
+            if (!resolvedImageUrl || isBrokenImageUrl(resolvedImageUrl)) {
+              resolvedImageUrl = "/multimedia/logo-barber.jpg";
+            }
+          } else if (!resolvedImageUrl || isBrokenImageUrl(resolvedImageUrl)) {
+            resolvedImageUrl = "/multimedia/logo-barber.jpg";
+          }
+
+          return {
+            ...member,
+            imageUrl: resolvedImageUrl,
+            icon: member.role === "Nuestra Filosofía" ? 'Group' : 'User',
+            imageHint: member.role === "Nuestra Filosofía" ? 'company logo' : (member.name.toLowerCase().includes("próximamente") && member.role === 'Estilista' ? 'female placeholder' : 'barber portrait')
+          };
+        });
 
         // Sort team members: active ones first
         extendedTeamData.sort((a, b) => {

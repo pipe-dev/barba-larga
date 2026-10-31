@@ -186,9 +186,9 @@ export async function blockTimeSlot(prevState: any, formData: FormData) {
             const newDocRef = doc(collection(db, "appointments"));
             batch.set(newDocRef, getBlockedSlotPayload(startDate));
         } else if (recurrence === 'yearly') {
-            // Repeat on the same day of the week for 52 consecutive weeks (1 full year)
+            // Repeat on the same day of the week for 8 consecutive weeks (protects Firestore quota)
             let currentDate = startDate;
-            for (let week = 0; week < 52; week++) {
+            for (let week = 0; week < 8; week++) {
                 const newDocRef = doc(collection(db, "appointments"));
                 batch.set(newDocRef, getBlockedSlotPayload(currentDate));
                 currentDate = addDays(currentDate, 7);
@@ -218,6 +218,7 @@ export async function blockTimeSlot(prevState: any, formData: FormData) {
         await batch.commit();
 
         try {
+            revalidateTag('appointments-cache');
             revalidatePath('/admin');
             revalidatePath('/');
         } catch {}
@@ -682,6 +683,7 @@ Total: $${totalPrice.toLocaleString('es-CO')}`;
         const successMessage = `¡Reserva confirmada! Tu cita para el ${date} a las ${time} ha sido agendada.`;
 
         try {
+            revalidateTag('appointments-cache');
             revalidatePath('/admin');
             revalidatePath('/');
         } catch {}
@@ -740,6 +742,7 @@ export async function deleteAppointment(appointmentId: string): Promise<{ succes
         });
 
         try {
+            revalidateTag('appointments-cache');
             revalidatePath('/admin');
             revalidatePath('/');
         } catch {}
@@ -759,6 +762,7 @@ export async function deleteBlockedSlot(slotId: string): Promise<{ success: bool
     try {
         await deleteDoc(doc(db, "appointments", slotId));
         try {
+            revalidateTag('appointments-cache');
             revalidatePath('/admin');
             revalidatePath('/');
         } catch {}
@@ -793,6 +797,7 @@ export async function deleteAllBlockedSlots(barberId: string): Promise<{ success
         await batch.commit();
 
         try {
+            revalidateTag('appointments-cache');
             revalidatePath('/admin');
             revalidatePath('/');
         } catch {}
@@ -832,6 +837,7 @@ export async function reactivateAppointment(appointmentId: string): Promise<{ su
         });
 
         try {
+            revalidateTag('appointments-cache');
             revalidatePath('/admin');
             revalidatePath('/');
         } catch {}
@@ -965,15 +971,20 @@ const convertTimeTo24Hour = (time: string): string => {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 };
 
-export async function getAllAppointments(): Promise<Appointment[]> {
+async function fetchAppointmentsFromFirestore(): Promise<Appointment[]> {
     try {
         const today = new Date();
-        const threeMonthsAgo = subMonths(today, 3);
-        const startDateString = format(threeMonthsAgo, "yyyy-MM-dd");
+        // Ventana operativa: ultimos 15 dias + proximos 30 dias (evita leer las 52 semanas futuras)
+        const startDateString = format(subDays(today, 15), "yyyy-MM-dd");
+        const endDateString = format(addDays(today, 30), "yyyy-MM-dd");
 
         const appointmentsCol = collection(db, "appointments");
 
-        const q = query(appointmentsCol, where("date", ">=", startDateString));
+        const q = query(
+            appointmentsCol,
+            where("date", ">=", startDateString),
+            where("date", "<=", endDateString)
+        );
 
         const querySnapshot = await getDocs(q);
 
@@ -1019,6 +1030,23 @@ export async function getAllAppointments(): Promise<Appointment[]> {
     } catch (error) {
         console.error('Error fetching all appointments:', error);
         return [];
+    }
+}
+
+const cachedAppointments = unstable_cache(
+    async () => fetchAppointmentsFromFirestore(),
+    ['admin-appointments-window'],
+    {
+        tags: ['appointments-cache'],
+        revalidate: 300, // Maximo 1 lectura a Firestore cada 5 minutos si no hay cambios
+    }
+);
+
+export async function getAllAppointments(): Promise<Appointment[]> {
+    try {
+        return await cachedAppointments();
+    } catch {
+        return await fetchAppointmentsFromFirestore();
     }
 }
 
@@ -1069,6 +1097,7 @@ export async function confirmAppointmentAsSale(appointmentId: string, paymentMet
         });
 
         try {
+            revalidateTag('appointments-cache');
             revalidatePath('/admin');
             revalidatePath('/');
         } catch {}
@@ -1606,6 +1635,11 @@ export async function addCustomer(prevState: any, formData: FormData) {
 
         await addDoc(collection(db, "customers"), customerData);
 
+        try {
+            revalidateTag('customers-cache');
+            revalidatePath('/admin/cash-flow');
+        } catch {}
+
         return { success: true, message: `Cliente '${name}' añadido con éxito.` };
     } catch (error) {
         console.error("Error adding customer:", error);
@@ -1637,6 +1671,11 @@ export async function deleteCustomers(customerEmails: string[]): Promise<{ succe
 
         await batch.commit();
 
+        try {
+            revalidateTag('customers-cache');
+            revalidatePath('/admin/cash-flow');
+        } catch {}
+
         return { success: true, message: `${querySnapshot.size} cliente(s) eliminado(s) con éxito.` };
 
     } catch (error) {
@@ -1646,7 +1685,7 @@ export async function deleteCustomers(customerEmails: string[]): Promise<{ succe
 }
 
 
-export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
+async function fetchCustomerAnalyticsFromFirestore(): Promise<CustomerAnalytics[]> {
     try {
         const dbServices = await getServicesFromDB();
         const activeServices = dbServices || [];
@@ -1654,8 +1693,8 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
         const appointmentsCol = collection(db, "appointments");
         const customersCol = collection(db, "customers");
 
-        const appointmentsQuery = query(appointmentsCol, orderBy("date", "desc"));
-        const manualCustomersQuery = query(customersCol);
+        const appointmentsQuery = query(appointmentsCol, orderBy("date", "desc"), limit(250));
+        const manualCustomersQuery = query(customersCol, limit(250));
 
         const [appointmentsSnapshot, manualCustomersSnapshot] = await Promise.all([
             getDocs(appointmentsQuery),
@@ -1793,6 +1832,23 @@ export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
     } catch (error) {
         console.error('Error fetching customer analytics:', error);
         return [];
+    }
+}
+
+const cachedCustomerAnalytics = unstable_cache(
+    async () => fetchCustomerAnalyticsFromFirestore(),
+    ['customer-analytics-cache'],
+    {
+        tags: ['customers-cache', 'appointments-cache'],
+        revalidate: 600, // 10 minutos de cache
+    }
+);
+
+export async function getCustomerAnalytics(): Promise<CustomerAnalytics[]> {
+    try {
+        return await cachedCustomerAnalytics();
+    } catch {
+        return await fetchCustomerAnalyticsFromFirestore();
     }
 }
 

@@ -1478,33 +1478,29 @@ export default function AdminPage() {
         });
     }, [loadData]);
 
-    // Background auto-refresh polling every 25 seconds when tab is active
+    // Background auto-refresh polling with 90s cooldown to protect Firestore quota
     React.useEffect(() => {
         if (!isAuthenticated) return;
 
-        const intervalId = setInterval(() => {
-            if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-                loadData(true);
-            }
-        }, 25000);
+        let lastFetchTime = Date.now();
+        const MIN_REFRESH_INTERVAL = 90000; // 90 segundos minimo entre recargas automaticas
 
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
+        const safeAutoRefresh = () => {
+            const now = Date.now();
+            if (typeof document !== 'undefined' && document.visibilityState === 'visible' && (now - lastFetchTime >= MIN_REFRESH_INTERVAL)) {
+                lastFetchTime = now;
                 loadData(true);
             }
         };
 
-        const handleFocus = () => {
-            loadData(true);
-        };
-
-        window.addEventListener('visibilitychange', handleVisibilityChange);
-        window.addEventListener('focus', handleFocus);
+        const intervalId = setInterval(safeAutoRefresh, MIN_REFRESH_INTERVAL);
+        window.addEventListener('visibilitychange', safeAutoRefresh);
+        window.addEventListener('focus', safeAutoRefresh);
 
         return () => {
             clearInterval(intervalId);
-            window.removeEventListener('visibilitychange', handleVisibilityChange);
-            window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('visibilitychange', safeAutoRefresh);
+            window.removeEventListener('focus', safeAutoRefresh);
         };
     }, [isAuthenticated, loadData]);
 

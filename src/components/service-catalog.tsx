@@ -18,20 +18,12 @@ import { useScissorsSound } from "@/hooks/use-scissors-sound";
 import { Check, ArrowLeft, ArrowRight, Clock, Loader2, Sparkles, Scissors, Droplets, PencilRuler, User } from "lucide-react";
 import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
-import { getSafeImageUrl } from "@/lib/image-validation";
+import { getSafeImageUrl, isBrokenImageUrl, officialServiceLocalImages } from "@/lib/image-validation";
 
 type Scene = 'home' | 'about' | 'team' | 'services' | 'booking' | 'ai-advisor' | 'location' | 'contact';
 
 // --- MAPA DE IMÁGENES OFICIALES PARA LOS 7 SERVICIOS ---
-const officialServiceImages: Record<string, string> = {
-  "haircut": "https://i.ibb.co/Ps2YzTHZ/corte-autoridad.webp",
-  "haircut-eyebrows": "https://i.ibb.co/1YCyX60S/haircut-eyebrows.png",
-  "haircut-beard": "https://i.ibb.co/j9zYsTHH/experiencia-dominante.jpg",
-  "haircut-design": "https://i.ibb.co/PGKgQDLH/corte-dise-o-cejas.jpg",
-  "haircut-facial-mask": "https://i.ibb.co/TD9mLsWr/rostro-impecable.png",
-  "beard-combo": "https://i.ibb.co/21fHYQfG/barba.png",
-  "eyebrows": "https://i.ibb.co/1YCyX60S/haircut-eyebrows.png",
-};
+const officialServiceImages: Record<string, string> = officialServiceLocalImages;
 
 // --- MAPA DE ICONOS ---
 const getServiceIcon = (id: string, iconName?: string) => {
@@ -57,8 +49,10 @@ const ServiceCard = ({
   const cardRef = React.useRef<HTMLDivElement>(null);
   const perspectiveWrapperRef = React.useRef<HTMLDivElement>(null);
 
-  // Imagen del servicio con fallback a la ruta oficial
-  const imageSrc = service.mediaUrl || officialServiceImages[service.id] || "https://i.ibb.co/Ps2YzTHZ/corte-autoridad.webp";
+  // Imagen del servicio con fallback a la ruta oficial local
+  const imageSrc = (!service.mediaUrl || isBrokenImageUrl(service.mediaUrl))
+    ? (officialServiceImages[service.id] || "/multimedia/corte-autoridad.jpg")
+    : service.mediaUrl;
   const isVariablePrice = service.name?.toLowerCase().includes('keratina') || service.name?.toLowerCase().includes('coloración');
 
   // Animación 3D Parallax interactiva con GSAP
@@ -126,7 +120,7 @@ const ServiceCard = ({
                 priority={isFeatured}
                 onError={(e) => {
                   const target = e.target as HTMLImageElement;
-                  target.src = officialServiceImages[service.id] || "https://i.ibb.co/Ps2YzTHZ/corte-autoridad.webp";
+                  target.src = officialServiceImages[service.id] || "/multimedia/corte-autoridad.jpg";
                 }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent" />

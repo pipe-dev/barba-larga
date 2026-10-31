@@ -43,6 +43,18 @@ export async function logSystemEvent(params: {
   commit?: string;
 }): Promise<string | null> {
   try {
+    const rawError = params.error instanceof Error ? params.error.message : String(params.error || '');
+    const combinedMessage = `${params.message || ''} ${rawError}`;
+
+    // Cortocircuito si Firebase agoto su cuota diaria
+    if (
+      combinedMessage.includes('RESOURCE_EXHAUSTED') ||
+      combinedMessage.includes('Quota exceeded')
+    ) {
+      console.warn(`[TELEMETRY SKIPPED - QUOTA EXHAUSTED] Action: ${params.action}`);
+      return null;
+    }
+
     let stackTrace: string | undefined = undefined;
     let finalMessage = params.message;
 

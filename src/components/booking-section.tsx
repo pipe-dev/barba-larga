@@ -19,7 +19,7 @@ import { useSuccessSound } from "@/hooks/use-success-sound";
 import { useShaverSound } from "@/hooks/use-shaver-sound";
 import { Service, getBaseAvailableTimes, SLOT_INTERVAL_MINUTES, timeToMinutes, minutesToTimeStr, doIntervalsOverlap } from "@/lib/data";
 import { getServicesFromDB } from "@/app/actions/services";
-import { getSafeImageUrl } from "@/lib/image-validation";
+import { getSafeImageUrl, officialServiceLocalImages } from "@/lib/image-validation";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -414,7 +414,7 @@ function BookingForm({ onNavigate }: { onNavigate: (scene: Scene) => void }) {
                               {service.mediaType === 'video' ? (
                                 <video src={service.mediaUrl} autoPlay loop muted playsInline className="object-cover h-full w-full" />
                               ) : (
-                                <Image src={getSafeImageUrl(service.mediaUrl)} alt={service.name} width={64} height={64} className="object-cover h-full w-full" />
+                                <Image src={getSafeImageUrl(service.mediaUrl, officialServiceLocalImages[service.id] || '/multimedia/corte-autoridad.jpg')} alt={service.name} width={64} height={64} className="object-cover h-full w-full" />
                               )}
                             </div>
                             <div>
